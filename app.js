@@ -658,6 +658,30 @@
     const end = localDateString(to);
     return { from, to, start, end };
   }
+  function saveSelectedRange() {
+    try {
+      localStorage.setItem('mojezdravi.range.v1', JSON.stringify({
+        choice: $('#range-select').value,
+        from: $('#range-from').value,
+        to: $('#range-to').value,
+      }));
+    } catch (error) {
+      console.warn('Vybrané období se nepodařilo uložit.', error);
+    }
+  }
+  function restoreSelectedRange() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('mojezdravi.range.v1') || 'null');
+      if (!saved || ![...$('#range-select').options].some((option) => option.value === saved.choice)) return false;
+      $('#range-select').value = saved.choice;
+      if (saved.from) $('#range-from').value = saved.from;
+      if (saved.to) $('#range-to').value = saved.to;
+      $('#custom-range').classList.toggle('hidden', saved.choice !== 'custom');
+      return true;
+    } catch {
+      return false;
+    }
+  }
   function inRange(record, range) { return record.date >= range.start && record.date <= range.end; }
   function currentRangeRecords() { const range = getRange(); return { range, records: sleepRecords.filter((r) => inRange(r, range)) }; }
   function allDataDates() {
@@ -720,6 +744,7 @@
     const dateFor = (offset) => { const date = new Date(`${minDate}T00:00:00`); date.setDate(date.getDate() + Math.min(maxDay, Number(offset))); return localDateString(date); };
     $('#range-select').value = 'custom'; $('#custom-range').classList.remove('hidden');
     $('#range-from').value = dateFor(start.value); $('#range-to').value = dateFor(end.value);
+    saveSelectedRange();
     updateDashboard();
   }
   function average(records, key) {
@@ -1527,9 +1552,11 @@
   $('#top-import').addEventListener('click', () => navigate('import'));
   $('#range-select').addEventListener('change', () => {
     $('#custom-range').classList.toggle('hidden', $('#range-select').value !== 'custom');
+    saveSelectedRange();
     updateDashboard();
   });
-  $('#range-from').addEventListener('change', updateDashboard); $('#range-to').addEventListener('change', updateDashboard);
+  $('#range-from').addEventListener('change', () => { saveSelectedRange(); updateDashboard(); });
+  $('#range-to').addEventListener('change', () => { saveSelectedRange(); updateDashboard(); });
   $('#chart-metric').addEventListener('change', updateDashboard);
   ['overview-activity-metric', 'overview-weight-metric', 'overview-sleep-metric', 'insight-daily-metric', 'insight-activity-metric', 'insight-weight-metric'].forEach((id) => $(`#${id}`).addEventListener('change', updateDashboard));
   $('#sleep-chart-metric').addEventListener('change', updateDashboard);
@@ -1619,6 +1646,7 @@
   $('#range-select').value = 'today';
   $('#range-from').value = localDateString(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29));
   $('#range-to').value = localDateString(today);
+  restoreSelectedRange();
   $('[name="measuredAt"]').value = toDateInputValue(today);
   if (normalizeStoredActivities()) writeStore(STORE.activity, activityRecords);
   if (normalizeStoredSleepDurations()) writeStore(STORE.sleep, sleepRecords);
