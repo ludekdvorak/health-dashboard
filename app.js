@@ -3,13 +3,16 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const readStore = (key) => { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } };
-  let dataDirectoryHandle = null, fileStorageActive = false, fileSaveQueue = Promise.resolve();
+  let dataDirectoryHandle = null, fileStorageActive = false, fileSaveQueue = Promise.resolve(), appDataLoaded = false;
   function setStorageStatus(label, state = 'ready') {
     const button = $('#storage-folder-button'), status = $('#storage-status');
+    const fileMode = location.protocol === 'file:';
+    if (button && fileMode && !fileStorageActive) { button.title = 'Načíst health-data.json'; label = appDataLoaded ? 'Data lokálně' : 'Načíst JSON'; }
+    else if (button && state === 'data-error') { button.title = 'Vybrat health-data.json ručně'; label = 'Načíst JSON'; }
     if (button) button.dataset.state = state;
     if (status) status.textContent = label;
     const notice = $('#storage-notice'), noticeText = $('#storage-notice-text'), noticeAction = $('#storage-notice-action');
-    const needsFolder = state === 'error' || (!fileStorageActive && state !== 'saving');
+    const needsFolder = state === 'error' || state === 'data-error' || (!fileStorageActive && state !== 'saving' && !appDataLoaded);
     if (notice) {
       notice.classList.toggle('hidden', !needsFolder);
       notice.dataset.state = state;
@@ -17,11 +20,15 @@
     if (noticeText) {
       noticeText.textContent = state === 'error'
         ? 'Nepodařilo se otevřít datový soubor. Zkontroluj přístup a vyber složku znovu.'
+        : state === 'data-error'
+          ? 'Načtení health-data.json ze složky serveru selhalo. Otevři server ve složce projektu, nebo soubor načti ručně na stránce Import dat.'
         : dataDirectoryHandle
           ? 'Datová složka je uložená, ale prohlížeč potřebuje obnovit přístup. Klikni na tlačítko a potvrď oprávnění.'
+        : fileMode
+          ? 'Bez serveru vyber health-data.json jednou. Stránka si jej uloží v tomto prohlížeči a příště ho obnoví automaticky.'
           : 'Data se zatím ukládají jen do tohoto profilu prohlížeče. Připoj složku, aby se ukládala do health-data.json a šla znovu načíst.';
     }
-    if (noticeAction) noticeAction.textContent = state === 'error' ? 'Vybrat složku znovu' : dataDirectoryHandle ? 'Obnovit přístup' : 'Připojit složku';
+    if (noticeAction) noticeAction.textContent = state === 'data-error' ? 'Vybrat health-data.json' : fileMode && !fileStorageActive ? (appDataLoaded ? 'Načíst jiný JSON' : 'Vybrat health-data.json') : state === 'error' ? 'Vybrat složku znovu' : dataDirectoryHandle ? 'Obnovit přístup' : 'Připojit složku';
     const privacyText = $('.privacy-card div span');
     if (privacyText) privacyText.textContent = fileStorageActive ? `Soubor health-data.json · ${dataDirectoryHandle.name}` : 'Zatím pouze v tomto prohlížeči.';
     const footerLabel = state === 'ready' && fileStorageActive ? 'Uloženo do health-data.json' : state === 'saving' ? 'Ukládám health-data.json…' : state === 'error' ? 'Chyba ukládání' : dataDirectoryHandle ? 'Čeká na přístup ke složce' : 'Uloženo v tomto prohlížeči';
@@ -102,15 +109,16 @@
     if (location.protocol === 'file:') return false;
     try {
       const response = await fetch(new URL('./health-data.json', location.href), { cache: 'no-store' });
-      if (!response.ok) return false;
+      if (!response.ok) { setStorageStatus('Načíst JSON', 'data-error'); return false; }
       const data = await response.json();
-      if (!data || typeof data !== 'object') return false;
+      if (!data || typeof data !== 'object' || !Array.isArray(data.sleepRecords)) { setStorageStatus('Načíst JSON', 'data-error'); return false; }
       const hadSleep = sleepRecords.some(isSleepRecord);
       (Array.isArray(data.sleepRecords) ? data.sleepRecords : []).forEach(upsertDailyRecord);
       (Array.isArray(data.activityRecords) ? data.activityRecords : []).forEach(upsertActivityRecord);
       (Array.isArray(data.weightRecords) ? data.weightRecords : []).forEach(mergeWeightRecord);
       mergeImportHistory(Array.isArray(data.importRecords) ? data.importRecords : []);
       normalizeStoredActivities();
+      normalizeStoredSleepDurations();
       if (fileStorageActive) await saveDataFile();
       else {
         localStorage.setItem(STORE.sleep, JSON.stringify(sleepRecords));
@@ -118,13 +126,40 @@
         localStorage.setItem(STORE.weight, JSON.stringify(weightRecords));
         localStorage.setItem(STORE.imports, JSON.stringify(importRecords));
       }
+      appDataLoaded = true;
       renderImports();
       updateDashboard();
+      const batteryDays = sleepRecords.filter((r) => r.date >= getRange().start && r.date <= getRange().end && (r.bodyBatteryCharged != null || r.bodyBatteryDrained != null)).length;
+      setStorageStatus(`Načteno · ${sleepRecords.length} dnů`, 'ready');
+      if (!batteryDays) showToast('health-data.json se načetl, ale ve zvoleném období nejsou záznamy Body Battery. Zkus delší období.');
       if (!hadSleep && sleepRecords.some(isSleepRecord)) showToast('Spánková data byla načtena z health-data.json vedle aplikace.');
       return true;
     } catch (error) {
       console.warn('health-data.json vedle aplikace se nepodařilo načíst', error);
       return false;
+    }
+  }
+  function mergeAppData(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Soubor nemá očekávaný formát health-data.json.');
+    const hadSleep = sleepRecords.some(isSleepRecord);
+    (Array.isArray(data.sleepRecords) ? data.sleepRecords : []).forEach(upsertDailyRecord);
+    (Array.isArray(data.activityRecords) ? data.activityRecords : []).forEach(upsertActivityRecord);
+    (Array.isArray(data.weightRecords) ? data.weightRecords : []).forEach(mergeWeightRecord);
+    mergeImportHistory(Array.isArray(data.importRecords) ? data.importRecords : []);
+    normalizeStoredActivities();
+    normalizeStoredSleepDurations();
+    appDataLoaded = true;
+    for (const [store, value] of [[STORE.sleep, sleepRecords], [STORE.activity, activityRecords], [STORE.weight, weightRecords], [STORE.imports, importRecords]]) writeStore(store, value);
+    renderImports(); updateDashboard();
+    setStorageStatus('Data uložena lokálně', 'ready');
+    if (!hadSleep && sleepRecords.some(isSleepRecord)) showToast('Zdravotní data byla načtena a uložená v tomto prohlížeči.');
+  }
+  async function loadAppDataFile(file) {
+    try {
+      mergeAppData(JSON.parse((await file.text()).replace(/^\uFEFF/, '')));
+      showImportMessage(`Načteno ${file.name}. Data se po tomto prvním výběru obnoví z úložiště prohlížeče.`, false);
+    } catch (error) {
+      showImportMessage(error.message || 'Soubor se nepodařilo načíst.', true);
     }
   }
   async function activateDataDirectory(handle) {
@@ -141,6 +176,7 @@
       mergeImportHistory(legacy.importRecords);
     }
     normalizeStoredActivities();
+    normalizeStoredSleepDurations();
     dataDirectoryHandle = handle;
     fileStorageActive = true;
     await saveDataFile();
@@ -185,10 +221,15 @@
       }
     }
   }
+  function chooseDataSource() {
+    if ((location.protocol === 'file:' && !fileStorageActive) || $('#storage-folder-button').dataset.state === 'data-error') { $('#app-json-input').click(); return; }
+    connectDataDirectory();
+  }
   let sleepRecords = readStore(STORE.sleep);
   let activityRecords = readStore(STORE.activity);
   let weightRecords = readStore(STORE.weight);
   let importRecords = readStore(STORE.imports);
+  appDataLoaded = sleepRecords.length + activityRecords.length + weightRecords.length > 0;
   let toastTimer;
 
   const monthMap = { led: 0, uno: 1, bre: 2, dub: 3, kve: 4, cvn: 5, cvc: 6, srp: 7, zar: 8, rij: 9, lis: 10, pro: 11 };
@@ -200,6 +241,9 @@
     stress: { label: 'Stres ve spánku', unit: 'bodů', format: (v) => `${Math.round(v)}` },
     spo2Avg: { label: 'Průměrné SpO₂', unit: '%', format: (v) => `${v.toFixed(1)} %` },
     bodyBatteryChange: { label: 'Změna Body Battery', unit: 'bodů', format: (v) => `${Math.round(v)} bodů` },
+    deepSleep: { label: 'Hluboký spánek', unit: 'min', format: (v) => fmtDuration(v) },
+    lightSleep: { label: 'Lehký spánek', unit: 'min', format: (v) => fmtDuration(v) },
+    remSleep: { label: 'REM spánek', unit: 'min', format: (v) => fmtDuration(v) },
     breathingAvg: { label: 'Dýchání', unit: 'brpm', format: (v) => `${v.toFixed(1)} brpm` },
     totalCalories: { label: 'Celkem kalorií', unit: 'kcal', format: (v) => `${Math.round(v).toLocaleString('cs-CZ')} kcal` },
     activeCalories: { label: 'Aktivní kalorie', unit: 'kcal', format: (v) => `${Math.round(v).toLocaleString('cs-CZ')} kcal` },
@@ -457,7 +501,7 @@
       if (!date) return [];
       const deepSleep = jsonNumber(row.deepSleepSeconds), lightSleep = jsonNumber(row.lightSleepSeconds), remSleep = jsonNumber(row.remSleepSeconds);
       const duration = [deepSleep, lightSleep, remSleep].reduce((sum, value) => sum + (value || 0), 0);
-      return [{ type: 'daily', date, source: fileName, hasSleepData: true, sleepScore: jsonNumber(scores.overallScore), sleepQuality: scores.feedback || null,
+      return [{ type: 'daily', date, source: fileName, hasSleepData: true, sleepUnitsVersion: 2, sleepScore: jsonNumber(scores.overallScore), sleepQuality: scores.feedback || null,
         sleepDuration: duration ? duration / 60 : null, deepSleep: deepSleep === null ? null : deepSleep / 60,
         lightSleep: lightSleep === null ? null : lightSleep / 60, remSleep: remSleep === null ? null : remSleep / 60,
         awakeDuration: jsonNumber(row.awakeSleepSeconds) === null ? null : row.awakeSleepSeconds / 60,
@@ -567,11 +611,38 @@
     }
     return changed;
   }
+  function normalizeStoredSleepDurations() {
+    let changed = false;
+    const durationKeys = ['sleepDuration', 'deepSleep', 'lightSleep', 'remSleep', 'awakeDuration'];
+    for (const record of sleepRecords) {
+      if (record.type === 'weekly' || !durationKeys.some((key) => Number.isFinite(Number(record[key])))) continue;
+      if (record.sleepUnitsVersion !== 2) {
+        for (const key of durationKeys) {
+          const value = Number(record[key]);
+          if (Number.isFinite(value) && value > 24 * 60) record[key] = value / 60;
+        }
+        record.sleepUnitsVersion = 2;
+        changed = true;
+      }
+    }
+    return changed;
+  }
   function getRange() {
     const choice = $('#range-select').value;
     const today = new Date();
     let from, to = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    if (choice === 'custom') {
+    if (choice === 'today') {
+      from = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    } else if (choice === 'yesterday') {
+      from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+      to = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+      to.setHours(23, 59, 59, 999);
+    } else if (choice === 'month') {
+      from = new Date(today.getFullYear(), today.getMonth(), 1);
+    } else if (choice === 'previous-month') {
+      from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      to = new Date(today.getFullYear(), today.getMonth(), 0, 23, 59, 59, 999);
+    } else if (choice === 'custom') {
       from = $('#range-from').value ? new Date(`${$('#range-from').value}T00:00:00`) : new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29);
       to = $('#range-to').value ? new Date(`${$('#range-to').value}T23:59:59`) : new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
     } else if (choice === 'all') {
@@ -655,6 +726,166 @@
     const vals = records.map((r) => r[key]).filter((v) => v !== '' && v !== null && v !== undefined).map(Number).filter(Number.isFinite);
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
   }
+  function chartCards(host, definitions, render, hasData, emptyText = 'Pro tyto ukazatele nejsou ve zvoleném období data.') {
+    const cards = definitions.filter((item) => hasData(item.key));
+    host.className = cards.length ? 'metric-trend-grid' : 'chart-empty';
+    host.innerHTML = cards.length
+      ? cards.map((item) => `<article class="panel metric-trend-card"><div class="metric-trend-heading"><strong>${esc(item.label)}</strong><span>${esc(item.note || '')}</span></div>${render(item.key)}</article>`).join('')
+      : `<strong>${esc(emptyText)}</strong>`;
+  }
+  function metricDefinitions(keys, info) { return keys.map((key) => ({ key, label: info[key]?.label || key, note: info[key]?.unit || '' })); }
+  function mountOverviewHealthCharts() {
+    if ($('#overview-health-charts')) return;
+    const section = document.createElement('section');
+    section.id = 'overview-health-charts';
+    section.className = 'overview-health-charts';
+    section.innerHTML = '<div class="section-heading"><div><h2>Denní ukazatele</h2><p>Průběh všech dostupných hodnot ve zvoleném období</p></div></div><div id="overview-health-grid"></div>';
+    $('#page-overview .battery-section').after(section);
+  }
+  function mountInsightForecastCharts() {
+    if ($('#insight-forecast-charts')) return;
+    const section = document.createElement('section');
+    section.id = 'insight-forecast-charts';
+    section.className = 'insight-forecast-charts';
+    section.innerHTML = '<div class="section-heading"><div><h2>Možný vývoj na dalších 30 dní</h2><p>Čárkovaná část prodlužuje nedávný trend; jde o orientační scénář, ne jistou předpověď.</p></div><span class="explore-tag">SCÉNÁŘ</span></div><div id="insight-forecast-grid" class="insight-forecast-grid"></div>';
+    $('.insight-charts-section').after(section);
+  }
+  function mountGarminQuickOverview() {
+    if ($('#garmin-quick-overview')) return;
+    const section = document.createElement('section');
+    section.id = 'garmin-quick-overview';
+    section.className = 'garmin-quick-overview';
+    section.innerHTML = '<div class="section-heading"><div><h2>Stručný přehled</h2><p>Nejdůležitější hodnoty a jejich vývoj ve zvoleném období</p></div><span id="quick-overview-count" class="quick-overview-count"></span></div><div id="garmin-quick-grid" class="garmin-quick-grid"></div>';
+    const timeline = $('#page-overview .timeline-panel');
+    timeline.after(section);
+  }
+  function quickSparkline(values, color) {
+    const nums = values.map(Number).filter(Number.isFinite);
+    if (!nums.length) return '<div class="quick-empty-visual">Čeká na data</div>';
+    if (nums.length === 1) return `<div class="quick-sparkline"><svg viewBox="0 0 240 64" role="img"><line x1="8" y1="54" x2="232" y2="54" stroke="#e8edf4"/><circle cx="120" cy="30" r="5" fill="white" stroke="${color}" stroke-width="3"/></svg></div>`;
+    let lo = Math.min(...nums), hi = Math.max(...nums);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pts = nums.map((n, i) => `${8 + i * 224 / (nums.length - 1)},${54 - (n - lo) / (hi - lo) * 42}`).join(' ');
+    return `<div class="quick-sparkline"><svg viewBox="0 0 240 64" preserveAspectRatio="none" role="img"><line x1="8" y1="54" x2="232" y2="54" stroke="#e8edf4"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="232" cy="${54 - (nums.at(-1) - lo) / (hi - lo) * 42}" r="4" fill="white" stroke="${color}" stroke-width="2.5"/></svg></div>`;
+  }
+  function quickRing(value, max, color, label) {
+    if (!Number.isFinite(value)) return '<div class="quick-ring-wrap"><span class="quick-ring-empty">—</span></div>';
+    const progress = Math.max(0, Math.min(1, value / max)), circumference = 2 * Math.PI * 34;
+    return `<div class="quick-ring-wrap"><svg viewBox="0 0 88 88" role="img" aria-label="${esc(label)}"><circle cx="44" cy="44" r="34" fill="none" stroke="#e9edf3" stroke-width="8"/><circle cx="44" cy="44" r="34" fill="none" stroke="${color}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(circumference * progress).toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 44 44)"/></svg><strong>${esc(label)}</strong></div>`;
+  }
+  function renderGarminQuickOverview(records, activities) {
+    const daily = records.filter((r) => r.type !== 'weekly').sort((a, b) => a.date.localeCompare(b.date));
+    const getPoints = (key, source = daily) => source.map((r) => ({ date: r.date, value: Number(r[key]) })).filter((p) => Number.isFinite(p.value));
+    const latest = (key, source = daily) => getPoints(key, source).at(-1) || null;
+    const valueText = (point, format) => point ? format(point.value) : '—';
+    const avg7 = (key) => average(daily.slice(-7), key);
+    const cards = [
+      { key: 'hr', title: 'Klidový tep', icon: '♥', tone: '#f05a64', value: valueText(latest('restingHr'), (v) => `${Math.round(v)} <small>t/min.</small>`), note: avg7('restingHr') === null ? 'Klidový průměr · 7 dní' : `Průměr 7 dní · ${Math.round(avg7('restingHr'))} t/min.`, visual: quickSparkline(getPoints('restingHr').slice(-14).map((p) => p.value), '#f05a64') },
+      { key: 'steps', title: 'Kroky', icon: '↟', tone: '#3489ed', value: valueText(latest('steps'), (v) => Math.round(v).toLocaleString('cs-CZ')), note: latest('steps') ? `Cíl 7 500 · ${Math.round(latest('steps').value / 7500 * 100)} %` : 'Denní cíl · 7 500 kroků', visual: quickRing(latest('steps')?.value ?? NaN, 7500, '#3489ed', latest('steps') ? `${Math.min(100, Math.round(latest('steps').value / 7500 * 100))} %` : '—') },
+      { key: 'calories', title: 'Spálené kalorie', icon: '♨', tone: '#22a36d', value: valueText(latest('totalCalories'), (v) => Math.round(v).toLocaleString('cs-CZ')), note: latest('activeCalories') ? `${Math.round(latest('activeCalories').value).toLocaleString('cs-CZ')} aktivní kcal` : 'Celkem za den', visual: quickSparkline(getPoints('totalCalories').slice(-14).map((p) => p.value), '#22a36d') },
+      { key: 'stress', title: 'Stres', icon: '◌', tone: '#ed8b42', value: valueText(latest('stress'), (v) => `${Math.round(v)} <small>bodů</small>`), note: 'Průměrná hodnota Garmin', visual: quickRing(latest('stress')?.value ?? NaN, 100, '#ed8b42', latest('stress') ? `${Math.round(latest('stress').value)}` : '—') },
+      { key: 'battery', title: 'Body Battery', icon: '↗', tone: '#2477d4', value: '—', note: 'Průběžná úroveň 0–100', visual: quickRing(NaN, 100, '#2477d4', '—') },
+      { key: 'vo2', title: 'VO₂ max', icon: '⌁', tone: '#8e61da', value: '—', note: 'Poslední dostupné měření', visual: '' },
+      { key: 'sleep', title: 'Skóre spánku', icon: '☾', tone: '#a84ec1', value: valueText(latest('sleepScore'), (v) => `${Math.round(v)} <small>/ 100</small>`), note: latest('sleepDuration') ? `Délka ${fmtDuration(latest('sleepDuration').value)}` : 'Skóre poslední noci', visual: quickSparkline(getPoints('sleepScore').slice(-14).map((p) => p.value), '#a84ec1') },
+      { key: 'breathing', title: 'Dýchání', icon: '≈', tone: '#19a9bd', value: valueText(latest('breathingAvg'), (v) => `${v.toFixed(1)} <small>brpm</small>`), note: 'Průměrná hodnota', visual: quickSparkline(getPoints('breathingAvg').slice(-14).map((p) => p.value), '#19a9bd') },
+    ];
+    const batteryPoints = daily.flatMap((r) => (Array.isArray(r.bodyBatteryLevels) ? r.bodyBatteryLevels : []).map((point) => ({ ...point, date: r.date }))).map((p) => ({ time: Number(p.time) || Date.parse(p.time), value: Number(p.value) })).filter((p) => Number.isFinite(p.value) && Number.isFinite(p.time)).sort((a, b) => a.time - b.time);
+    const batteryLatest = batteryPoints.at(-1)?.value;
+    const batteryCard = cards.find((c) => c.key === 'battery');
+    batteryCard.value = Number.isFinite(batteryLatest) ? `${Math.round(batteryLatest)} <small>/ 100</small>` : '—';
+    batteryCard.note = Number.isFinite(batteryLatest) ? 'Poslední zaznamenaná úroveň' : 'Průběžná úroveň 0–100';
+    batteryCard.visual = quickRing(batteryLatest ?? NaN, 100, '#2477d4', Number.isFinite(batteryLatest) ? `${Math.round(batteryLatest)}` : '—');
+    const vo2Points = [...getPoints('vo2Max'), ...activities.map((r) => ({ date: r.date, value: Number(r.vo2Max) })).filter((p) => Number.isFinite(p.value))].sort((a, b) => a.date.localeCompare(b.date));
+    const vo2Latest = vo2Points.at(-1);
+    const vo2Card = cards.find((c) => c.key === 'vo2');
+    vo2Card.value = valueText(vo2Latest, (v) => `${v.toFixed(1)} <small>ml/kg/min</small>`);
+    vo2Card.note = vo2Latest ? `Záznam · ${fmtDate(vo2Latest.date)}` : 'Poslední dostupné měření';
+    vo2Card.visual = quickSparkline(vo2Points.slice(-14).map((p) => p.value), '#8e61da');
+    $('#quick-overview-count').textContent = `${daily.length} denních záznamů`;
+    $('#garmin-quick-grid').innerHTML = cards.map((card) => `<article class="quick-card" style="--quick-tone:${card.tone}"><div class="quick-card-head"><span class="quick-icon">${card.icon}</span><strong>${card.title}</strong></div><div class="quick-value">${card.value}</div><div class="quick-note">${card.note}</div>${card.visual}</article>`).join('');
+  }
+  function renderBattery(records) {
+    const rows = records.filter((r) => r.bodyBatteryCharged != null || r.bodyBatteryDrained != null)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const levelPoints = records.flatMap((r) => (Array.isArray(r.bodyBatteryLevels) ? r.bodyBatteryLevels : []).map((point) => ({ ...point, date: r.date })));
+    $('#battery-note').textContent = levelPoints.length
+      ? 'Synchronizace Garminu obsahuje i průběžnou úroveň 0–100. Křivka ukazuje zaznamenané hodnoty; nejde o zdravotní hodnocení.'
+      : 'Export obsahuje denní nabití a výdej, ne průběžnou úroveň Body Battery 0–100. Graf proto ukazuje denní součty, ne aktuální stav ani zdravotní hodnocení.';
+    renderBatteryLevels(levelPoints);
+    const charged = rows.reduce((sum, r) => sum + (Number(r.bodyBatteryCharged) || 0), 0);
+    const drained = rows.reduce((sum, r) => sum + (Number(r.bodyBatteryDrained) || 0), 0);
+    const net = average(rows, 'bodyBatteryChange');
+    $('#battery-net').textContent = net === null ? '—' : `${net > 0 ? '+' : ''}${Math.round(net)} bodů/den`;
+    $('#battery-net-note').textContent = rows.length ? `Průměr z ${rows.length} denních záznamů` : 'Průměr za období';
+    $('#battery-charged').textContent = rows.length ? `+${Math.round(charged)} bodů` : '—';
+    $('#battery-drained').textContent = rows.length ? `−${Math.round(drained)} bodů` : '—';
+    $('#battery-chart-subtitle').textContent = `${rows.length} dní s údaji o Body Battery`;
+    const host = $('#battery-trend-chart');
+    if (!rows.length) { host.className = 'chart-empty'; host.innerHTML = '<strong>Body Battery zatím v datech není</strong><span>Naimportuj Garmin denní wellness souhrny.</span>'; return; }
+    host.className = 'battery-svg-wrap';
+    const W = 900, H = 250, left = 42, right = 14, top = 18, base = 125, bottom = 32;
+    const plotted = rows.length > 60 ? Array.from({ length: 60 }, (_, i) => rows[Math.round(i * (rows.length - 1) / 59)]) : rows;
+    const max = Math.max(10, ...plotted.flatMap((r) => [Number(r.bodyBatteryCharged) || 0, Number(r.bodyBatteryDrained) || 0])) * 1.12;
+    const slot = (W - left - right) / plotted.length, barW = Math.max(1.5, Math.min(9, slot * .32));
+    const yCharge = (v) => base - (v / max) * (base - top);
+    const yDrain = (v) => base + (v / max) * (H - base - bottom);
+    const grid = [0, .5, 1].map((p) => { const up = base - p * (base - top), down = base + p * (H - base - bottom); return `<line x1="${left}" y1="${up}" x2="${W-right}" y2="${up}" stroke="#edf0f5" stroke-dasharray="3 5"/><line x1="${left}" y1="${down}" x2="${W-right}" y2="${down}" stroke="#edf0f5" stroke-dasharray="3 5"/>${p ? `<text x="${left-8}" y="${up+3}" fill="#99a3b2" font-size="10" text-anchor="end">${Math.round(max*p)}</text><text x="${left-8}" y="${down+3}" fill="#99a3b2" font-size="10" text-anchor="end">${Math.round(max*p)}</text>` : ''}`; }).join('');
+    const bars = plotted.map((r, i) => { const center = left + slot * (i + .5), charge = Number(r.bodyBatteryCharged) || 0, drain = Number(r.bodyBatteryDrained) || 0; return `<g><title>${esc(fmtDate(r.date))}: nabito +${Math.round(charge)}, vybito −${Math.round(drain)}</title><rect x="${center-barW-1}" y="${yCharge(charge)}" width="${barW}" height="${Math.max(1,base-yCharge(charge))}" rx="${Math.min(3,barW/2)}" fill="#37b988"/><rect x="${center+1}" y="${base}" width="${barW}" height="${Math.max(1,yDrain(drain)-base)}" rx="${Math.min(3,barW/2)}" fill="#ed9b66"/></g>`; }).join('');
+    const labelIndexes = [0, Math.floor((plotted.length - 1) / 2), plotted.length - 1].filter((v, i, a) => a.indexOf(v) === i);
+    const labels = labelIndexes.map((i) => `<text x="${left + slot * (i + .5)}" y="${H-7}" fill="#8e99aa" font-size="10" text-anchor="middle">${esc(fmtDate(plotted[i].date,{day:'numeric',month:'short'}))}</text>`).join('');
+    host.innerHTML = `<svg class="battery-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Denní nabití Body Battery nad nulovou osou a vybití pod ní">${grid}<line x1="${left}" y1="${base}" x2="${W-right}" y2="${base}" stroke="#cfd7e3" stroke-width="1.5"/>${bars}${labels}</svg>`;
+  }
+  function renderBatteryLevels(points) {
+    const host = $('#battery-level-chart');
+    $('#battery-current').textContent = '—';
+    $('#battery-current-note').textContent = 'Průběžná úroveň 0–100';
+    if (!points.length) {
+      $('#battery-level-subtitle').textContent = 'Zobrazí se po synchronizaci, pokud Garmin vrátí průběžné hodnoty';
+      host.className = 'chart-empty';
+      host.innerHTML = '<strong>Průběžná úroveň zatím není v datech</strong><span>Samotný export obvykle obsahuje jen denní nabití a výdej.</span>';
+      return;
+    }
+    const parsed = points.map((point) => {
+      let time = typeof point.time === 'number' ? point.time : (/^\d+$/.test(String(point.time)) ? Number(point.time) : Date.parse(point.time));
+      if (time > 0 && time < 1e12) time *= 1000;
+      return { time, value: Number(point.value), date: point.date };
+    }).filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value) && point.value >= 0 && point.value <= 100).sort((a, b) => a.time - b.time);
+    if (!parsed.length) { host.className = 'chart-empty'; host.innerHTML = '<strong>Průběžné hodnoty nemají rozpoznatelný čas</strong>'; return; }
+    const latest = parsed.at(-1);
+    $('#battery-current').textContent = `${Math.round(latest.value)} / 100`;
+    $('#battery-current-note').textContent = `Poslední záznam · ${new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(latest.time))}`;
+    const plotted = parsed.length > 360 ? Array.from({ length: 360 }, (_, i) => parsed[Math.round(i * (parsed.length - 1) / 359)]) : parsed;
+    const W = 900, H = 190, left = 42, right = 14, top = 14, bottom = 30;
+    const min = plotted[0].time, max = plotted.at(-1).time, span = Math.max(1, max - min);
+    const x = (time) => left + (time - min) / span * (W - left - right);
+    const y = (value) => top + (100 - value) / 100 * (H - top - bottom);
+    const segments = []; let segment = [];
+    for (const point of plotted) {
+      if (segment.length && point.time - segment.at(-1).time > 6 * 60 * 60 * 1000) { segments.push(segment); segment = []; }
+      segment.push(point);
+    }
+    if (segment.length) segments.push(segment);
+    const fills = segments.filter((items) => items.length > 1).map((items) => {
+      const line = items.map((point, i) => `${i ? 'L' : 'M'}${x(point.time).toFixed(1)},${y(point.value).toFixed(1)}`).join(' ');
+      return `<path d="${line} L${x(items.at(-1).time).toFixed(1)},${y(0)} L${x(items[0].time).toFixed(1)},${y(0)} Z" fill="#37b988" opacity=".09"/>`;
+    }).join('');
+    const paths = segments.map((items) => items.slice(1).map((point, i) => {
+      const prior = items[i], color = point.value >= prior.value ? '#27b783' : '#e99a61';
+      return `<path d="M${x(prior.time).toFixed(1)},${y(prior.value).toFixed(1)} L${x(point.time).toFixed(1)},${y(point.value).toFixed(1)}" fill="none" stroke="${color}" stroke-width="2.8" stroke-linecap="round"/>`;
+    }).join('')).join('');
+    const labels = [0, .25, .5, .75, 1].map((part) => {
+      const value = Math.round(100 * (1 - part)), yy = y(value);
+      return `<line x1="${left}" y1="${yy}" x2="${W-right}" y2="${yy}" stroke="#edf0f5" stroke-dasharray="3 5"/><text x="${left-9}" y="${yy+3}" fill="#99a3b2" font-size="10" text-anchor="end">${value}</text>`;
+    }).join('');
+    const endLabels = [plotted[0], plotted[Math.floor((plotted.length-1)/2)], plotted.at(-1)].filter((point, i, all) => all.findIndex((p) => p.time === point.time) === i).map((point) => {
+      const label = new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(point.time));
+      return `<text x="${x(point.time)}" y="${H-7}" fill="#8e99aa" font-size="10" text-anchor="middle">${esc(label)}</text>`;
+    }).join('');
+    const dots = plotted.filter((_, i) => i % Math.max(1, Math.ceil(plotted.length / 80)) === 0 || i === plotted.length - 1).map((point) => `<circle cx="${x(point.time)}" cy="${y(point.value)}" r="2.4" fill="#fff" stroke="#37b988" stroke-width="1.5"><title>${esc(new Date(point.time).toLocaleString('cs-CZ'))}: ${Math.round(point.value)}</title></circle>`).join('');
+    $('#battery-level-subtitle').textContent = `${plotted.length.toLocaleString('cs-CZ')} hodnot · osa 0–100`;
+    host.className = 'battery-svg-wrap battery-level-wrap';
+    host.innerHTML = `<svg class="battery-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Průběžná úroveň Body Battery od nuly do sta">${labels}${fills}${paths}${dots}${endLabels}</svg>`;
+  }
   function fmtDate(iso, options = { day: 'numeric', month: 'short', year: 'numeric' }) {
     if (!iso) return '—';
     return new Intl.DateTimeFormat('cs-CZ', options).format(new Date(`${iso}T12:00:00`));
@@ -664,11 +895,32 @@
     $(`#${id}`).innerHTML = value === null ? `— <small>${unit}</small>` : `${decimals ? value.toFixed(decimals).replace('.', ',') : Math.round(value).toLocaleString('cs-CZ')} <small>${unit}</small>`;
   }
   function setNote(id, text) { $(`#${id}`).textContent = text; }
+  function singlePointChart(date, value, label, color = '#6484f0') {
+    return `<svg class="trend-svg single-point-svg" viewBox="0 0 700 150" role="img" aria-label="${esc(label)} · ${esc(fmtDate(date))}: ${esc(value)}"><line class="grid" x1="28" y1="32" x2="690" y2="32"/><line class="grid" x1="28" y1="76" x2="690" y2="76"/><line class="grid" x1="28" y1="120" x2="690" y2="120"/><line x1="350" y1="26" x2="350" y2="124" stroke="${color}" stroke-opacity=".18" stroke-dasharray="3 4"/><circle cx="350" cy="76" r="6" fill="#fff" stroke="${color}" stroke-width="3"><title>${esc(fmtDate(date))}: ${esc(value)}</title></circle><text x="350" y="143" fill="#8490a3" font-size="11" text-anchor="middle">${esc(fmtDate(date))} · ${esc(value)}</text></svg>`;
+  }
+  function chartValueLabels(points, x, y, format) {
+    const indexes = points.length <= 8 ? points.map((_, i) => i) : [...new Set([0, Math.round((points.length - 1) / 2), points.length - 1])];
+    return indexes.map((i) => `<text class="point-value" x="${x(i)}" y="${Math.max(15, y(points[i].value) - 10)}" text-anchor="middle">${esc(format(points[i]))}</text>`).join('');
+  }
+  function downsampleTrendPoints(points, maxPoints = 90) {
+    if (points.length <= maxPoints) return points;
+    const bucketCount = Math.max(2, Math.floor(maxPoints / 2)), sampled = [];
+    for (let bucket = 0; bucket < bucketCount; bucket++) {
+      const start = Math.floor(bucket * points.length / bucketCount);
+      const end = Math.max(start + 1, Math.floor((bucket + 1) * points.length / bucketCount));
+      const group = points.slice(start, end);
+      const min = group.reduce((best, point) => point.value < best.value ? point : best, group[0]);
+      const max = group.reduce((best, point) => point.value > best.value ? point : best, group[0]);
+      sampled.push(...(min === max ? [min] : [min, max]).sort((a, b) => points.indexOf(a) - points.indexOf(b)));
+    }
+    return [...new Set(sampled)];
+  }
   function buildTrend(records, key) {
-    const points = records.map((r) => ({ date: r.date, value: Number(r[key]) })).filter((p) => Number.isFinite(p.value)).sort((a, b) => a.date.localeCompare(b.date));
+    const rawPoints = records.map((r) => ({ date: r.date, value: r[key] == null || r[key] === '' ? NaN : Number(r[key]) })).filter((p) => Number.isFinite(p.value)).sort((a, b) => a.date.localeCompare(b.date));
+    const points = downsampleTrendPoints(rawPoints);
     if (!points.length) return `<div class="chart-empty"><span class="chart-icon"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 6-7"/></svg></span><strong>Pro tento ukazatel zatím nejsou data</strong><span>Importuj další Garmin CSV nebo zvol jiné období.</span></div>`;
-    if (points.length === 1) return `<div class="chart-empty"><span class="chart-icon"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14h.01"/></svg></span><strong>1 záznam · ${esc(fmtDate(points[0].date))}: ${esc(metricInfo[key].format(points[0].value))}</strong><span>Pro zobrazení trendu importuj více denních záznamů.</span></div>`;
-    const width = 700, height = 150, pad = { l: 32, r: 10, t: 11, b: 24 };
+    if (points.length === 1) return singlePointChart(points[0].date, metricInfo[key].format(points[0].value), metricInfo[key].label);
+    const width = 700, height = 230, pad = { l: 32, r: 10, t: 11, b: 24 };
     const vals = points.map((p) => p.value); let low = Math.min(...vals), high = Math.max(...vals);
     if (low === high) { low -= 1; high += 1; }
     const extra = (high - low) * .18; low -= extra; high += extra;
@@ -678,7 +930,8 @@
     const area = `${path} L${x(points.length - 1)},${height - pad.b} L${x(0)},${height - pad.b} Z`;
     const dateLabels = [points[0], points[Math.floor((points.length - 1) / 2)], points[points.length - 1]];
     const dateX = [x(0), x(Math.floor((points.length - 1) / 2)), x(points.length - 1)];
-    return `<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(metricInfo[key].label)} v čase"><defs><linearGradient id="areaFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#6484f0" stop-opacity=".2"/><stop offset="100%" stop-color="#6484f0" stop-opacity="0"/></linearGradient></defs><line class="grid" x1="${pad.l}" y1="${pad.t + 12}" x2="${width - pad.r}" y2="${pad.t + 12}"/><line class="grid" x1="${pad.l}" y1="${(height + pad.t - pad.b) / 2}" x2="${width - pad.r}" y2="${(height + pad.t - pad.b) / 2}"/><line class="grid" x1="${pad.l}" y1="${height - pad.b}" x2="${width - pad.r}" y2="${height - pad.b}"/><path class="area" d="${area}"/><path class="line" d="${path}"/>${points.map((p, i) => `<circle class="point" cx="${x(i)}" cy="${y(p.value)}" r="3"><title>${esc(fmtDate(p.date))}: ${esc(metricInfo[key].format(p.value))}</title></circle>`).join('')}${dateLabels.map((p, i) => `<text x="${dateX[i]}" y="${height - 5}" text-anchor="${i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}">${esc(fmtDate(p.date, { day: 'numeric', month: 'short' }))}</text>`).join('')}</svg>`;
+    const valueLabels = chartValueLabels(points, x, y, (point) => metricInfo[key].format(point.value));
+    return `<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(metricInfo[key].label)} v čase"><defs><linearGradient id="areaFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#6484f0" stop-opacity=".2"/><stop offset="100%" stop-color="#6484f0" stop-opacity="0"/></linearGradient></defs><line class="grid" x1="${pad.l}" y1="${pad.t + 12}" x2="${width - pad.r}" y2="${pad.t + 12}"/><line class="grid" x1="${pad.l}" y1="${(height + pad.t - pad.b) / 2}" x2="${width - pad.r}" y2="${(height + pad.t - pad.b) / 2}"/><line class="grid" x1="${pad.l}" y1="${height - pad.b}" x2="${width - pad.r}" y2="${height - pad.b}"/><path class="area" d="${area}"/><path class="line" d="${path}"/>${points.map((p, i) => `<circle class="point" cx="${x(i)}" cy="${y(p.value)}" r="3"><title>${esc(fmtDate(p.date))}: ${esc(metricInfo[key].format(p.value))}</title></circle>`).join('')}${valueLabels}${dateLabels.map((p, i) => `<text x="${dateX[i]}" y="${height - 5}" text-anchor="${i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}">${esc(fmtDate(p.date, { day: 'numeric', month: 'short' }))}</text>`).join('')}</svg>`;
   }
   function updateComposition(records, targetId = 'sleep-composition-content') {
     const target = $(`#${targetId}`);
@@ -762,7 +1015,7 @@
   }
   const activityInfo = {
     distance: { label: 'Vzdálenost', format: (r) => `${r.distance.toFixed(2)} km`, value: (r) => r.distance },
-    duration: { label: 'Doba aktivity', format: (r) => fmtActivityDuration(r.duration), value: (r) => r.duration / 60 },
+    duration: { label: 'Doba aktivity', format: (r) => fmtActivityDuration(r.duration), value: (r) => r.duration == null ? NaN : r.duration / 60 },
     avgHr: { label: 'Průměrný tep', format: (r) => `${Math.round(r.avgHr)} t/min.`, value: (r) => r.avgHr },
     calories: { label: 'Kalorie', format: (r) => `${Math.round(r.calories).toLocaleString('cs-CZ')} kcal`, value: (r) => r.calories },
     pace: { label: 'Průměrné tempo', format: (r) => fmtPace(r.pace), value: (r) => r.pace },
@@ -776,10 +1029,11 @@
   };
   function buildActivityTrend(records, key) {
     const info = activityInfo[key];
-    const points = records.map((record) => ({ record, value: info.value(record) })).filter((p) => Number.isFinite(p.value)).sort((a, b) => a.record.date.localeCompare(b.record.date));
+    const rawPoints = records.map((record) => ({ record, value: info.value(record) })).filter((p) => Number.isFinite(p.value)).sort((a, b) => a.record.date.localeCompare(b.record.date));
+    const points = downsampleTrendPoints(rawPoints);
     if (!points.length) return '<div class="chart-empty"><strong>Pro tento ukazatel nejsou v období data</strong><span>Zkus jiný ukazatel nebo období.</span></div>';
-    if (points.length === 1) return `<div class="chart-empty"><strong>1 aktivita · ${esc(fmtDate(points[0].record.date))}: ${esc(info.format(points[0].record))}</strong><span>Pro trend importuj další aktivity.</span></div>`;
-    const width = 700, height = 165, pad = { l: 30, r: 10, t: 12, b: 24 }, vals = points.map((p) => p.value);
+    if (points.length === 1) return singlePointChart(points[0].record.date, info.format(points[0].record), info.label, '#35b889');
+    const width = 700, height = 230, pad = { l: 30, r: 10, t: 12, b: 24 }, vals = points.map((p) => p.value);
     let low = Math.min(...vals), high = Math.max(...vals); if (low === high) { low -= 1; high += 1; }
     const extra = (high - low) * .16; low -= extra; high += extra;
     const x = (i) => pad.l + i * (width - pad.l - pad.r) / (points.length - 1);
@@ -787,12 +1041,13 @@
     const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
     const dates = [points[0], points[Math.floor((points.length - 1) / 2)], points.at(-1)];
     const xs = [x(0), x(Math.floor((points.length - 1) / 2)), x(points.length - 1)];
-    return `<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(info.label)} v čase"><line class="grid" x1="${pad.l}" y1="${pad.t}" x2="${width - pad.r}" y2="${pad.t}"/><line class="grid" x1="${pad.l}" y1="${(height - pad.b + pad.t) / 2}" x2="${width - pad.r}" y2="${(height - pad.b + pad.t) / 2}"/><line class="grid" x1="${pad.l}" y1="${height - pad.b}" x2="${width - pad.r}" y2="${height - pad.b}"/><path class="line" d="${path}"/>${points.map((p, i) => `<circle class="point" cx="${x(i)}" cy="${y(p.value)}" r="3"><title>${esc(fmtDate(p.record.date))} · ${esc(info.format(p.record))}</title></circle>`).join('')}${dates.map((p, i) => `<text x="${xs[i]}" y="${height - 5}" text-anchor="${i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}">${esc(fmtDate(p.record.date, { day: 'numeric', month: 'short' }))}</text>`).join('')}</svg>`;
+    const valueLabels = chartValueLabels(points, x, y, (point) => info.format(point.record));
+    return `<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(info.label)} v čase"><line class="grid" x1="${pad.l}" y1="${pad.t}" x2="${width - pad.r}" y2="${pad.t}"/><line class="grid" x1="${pad.l}" y1="${(height - pad.b + pad.t) / 2}" x2="${width - pad.r}" y2="${(height - pad.b + pad.t) / 2}"/><line class="grid" x1="${pad.l}" y1="${height - pad.b}" x2="${width - pad.r}" y2="${height - pad.b}"/><path class="line" d="${path}"/>${points.map((p, i) => `<circle class="point" cx="${x(i)}" cy="${y(p.value)}" r="3"><title>${esc(fmtDate(p.record.date))} · ${esc(info.format(p.record))}</title></circle>`).join('')}${valueLabels}${dates.map((p, i) => `<text x="${xs[i]}" y="${height - 5}" text-anchor="${i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}">${esc(fmtDate(p.record.date, { day: 'numeric', month: 'short' }))}</text>`).join('')}</svg>`;
   }
   function renderActivityCharts(records) {
-    const metric = $('#activity-chart-metric').value;
-    $('#activity-chart-subtitle').textContent = `${activityInfo[metric].label} · ${records.length} aktivit`;
-    $('#activity-trend-chart').innerHTML = buildActivityTrend(records, metric);
+    const activityKeys = ['distance', 'duration', 'avgHr', 'pace', 'calories', 'ascent', 'steps', 'trainingLoad', 'vo2Max', 'cadence', 'strideLength', 'aerobicTe'];
+    $('#activity-chart-subtitle').textContent = `${records.length} aktivit · všechny dostupné ukazatele`;
+    chartCards($('#activity-trend-chart'), metricDefinitions(activityKeys, activityInfo), (key) => buildActivityTrend(records, key), (key) => records.some((r) => r[key] != null && r[key] !== '' && Number.isFinite(Number(r[key]))), 'Pro zvolené období nejsou žádné aktivity.');
     const months = new Map();
     for (const record of records) {
       const key = record.date.slice(0, 7);
@@ -840,12 +1095,77 @@
     host.className = 'hypothesis-result';
     host.innerHTML = `<span class="hypothesis-icon">↗</span><div><strong>${esc(interpretation)}</strong><span>Spearmanova korelace ρ = ${rho.toFixed(2)} · ${pairs.length} spárovaných dnů · stejný kalendářní den. Jde o průzkumný vztah, nikoli důkaz příčiny nebo zdravotní doporučení.</span></div>`;
   }
+  function buildProjectionCard(records, key) {
+    const info = metricInfo[key];
+    const points = records.map((record) => ({ date: record.date, value: Number(record[key]) }))
+      .filter((point) => point.date && Number.isFinite(point.value)).sort((a, b) => a.date.localeCompare(b.date));
+    const title = info.label;
+    if (points.length < 10) return `<article class="panel projection-card"><div class="panel-heading"><div><h3>${esc(title)}</h3><p>Výhled zatím nelze spočítat</p></div></div><div class="projection-empty">Je potřeba alespoň 10 záznamů této metriky.</div></article>`;
+
+    const latest = points.at(-1), latestTime = new Date(`${latest.date}T12:00:00`).getTime();
+    const dayNumber = (date) => Math.round((new Date(`${date}T12:00:00`).getTime() - latestTime) / 86400000);
+    const recent = points.filter((point) => dayNumber(point.date) >= -60);
+    const buckets = new Map();
+    for (const point of recent) {
+      const day = dayNumber(point.date), bucket = Math.floor((day + 60) / 7);
+      const values = buckets.get(bucket) || [];
+      values.push({ day, value: point.value }); buckets.set(bucket, values);
+    }
+    const weekly = [...buckets.values()].map((values) => ({
+      day: values.reduce((sum, point) => sum + point.day, 0) / values.length,
+      value: values.reduce((sum, point) => sum + point.value, 0) / values.length,
+    })).sort((a, b) => a.day - b.day);
+    const span = weekly.length ? weekly.at(-1).day - weekly[0].day : 0;
+    if (weekly.length < 4 || span < 21) return `<article class="panel projection-card"><div class="panel-heading"><div><h3>${esc(title)}</h3><p>Málo dat pro smysluplný trend</p></div></div><div class="projection-empty">Přidej záznamy rozložené alespoň do čtyř týdnů.</div></article>`;
+
+    const meanX = weekly.reduce((sum, point) => sum + point.day, 0) / weekly.length;
+    const meanY = weekly.reduce((sum, point) => sum + point.value, 0) / weekly.length;
+    const denominator = weekly.reduce((sum, point) => sum + (point.day - meanX) ** 2, 0);
+    const slope = weekly.reduce((sum, point) => sum + (point.day - meanX) * (point.value - meanY), 0) / (denominator || 1);
+    const rawForecast = meanY + slope * (30 - meanX);
+    const limits = { sleepScore: [0, 100], sleepDuration: [0, 24 * 60], restingHr: [25, 220], steps: [0, 100000], stress: [0, 100], spo2Avg: [50, 100] };
+    const [minLimit, maxLimit] = limits[key] || [-Infinity, Infinity];
+    const forecast = Math.max(minLimit, Math.min(maxLimit, rawForecast));
+    const clipped = forecast !== rawForecast;
+    const historyStart = latestTime - 90 * 86400000, futureTime = latestTime + 30 * 86400000;
+    const shown = downsampleTrendPoints(points.filter((point) => new Date(`${point.date}T12:00:00`).getTime() >= historyStart), 70);
+    const values = [...shown.map((point) => point.value), forecast];
+    let low = Math.min(...values), high = Math.max(...values);
+    if (low === high) { low -= 1; high += 1; }
+    const margin = (high - low) * .2; low -= margin; high += margin;
+    const W = 700, H = 270, pad = { left: 35, right: 16, top: 26, bottom: 38 };
+    const x = (time) => pad.left + (time - historyStart) / (futureTime - historyStart) * (W - pad.left - pad.right);
+    const y = (value) => pad.top + (high - value) / (high - low) * (H - pad.top - pad.bottom);
+    const historyPath = shown.map((point, i) => `${i ? 'L' : 'M'}${x(new Date(`${point.date}T12:00:00`).getTime()).toFixed(1)},${y(point.value).toFixed(1)}`).join(' ');
+    const todayX = x(latestTime), forecastX = x(futureTime), latestY = y(latest.value), forecastY = y(forecast);
+    const grid = [0, .5, 1].map((part) => {
+      const yy = pad.top + part * (H - pad.top - pad.bottom);
+      return `<line x1="${pad.left}" y1="${yy}" x2="${W - pad.right}" y2="${yy}" stroke="#e9edf4" stroke-dasharray="3 5"/>`;
+    }).join('');
+    const axisLabels = [
+      `<text x="${pad.left}" y="${H - 9}" text-anchor="start">${esc(fmtDate(shown[0]?.date || latest.date, { day: 'numeric', month: 'short' }))}</text>`,
+      `<text x="${todayX}" y="${H - 9}" text-anchor="middle">Poslední záznam</text>`,
+      `<text x="${forecastX}" y="${H - 9}" text-anchor="end">+30 dní</text>`,
+    ].join('');
+    const latestLabel = esc(info.format(latest.value)), forecastLabel = esc(info.format(forecast));
+    const delta = forecast - latest.value;
+    const deltaLabel = `${delta > 0 ? '+' : ''}${info.format(delta)}`;
+    return `<article class="panel projection-card"><div class="panel-heading"><div><h3>${esc(title)}</h3><p>Trend po týdnech · posledních 60 dní</p></div><span class="projection-delta">${esc(deltaLabel)}</span></div><div class="projection-readings"><div><span>Poslední záznam</span><strong>${latestLabel}</strong></div><div><span>Scénář za 30 dní</span><strong>${forecastLabel}</strong></div></div><svg class="projection-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}: poslední hodnota ${latestLabel}, scénář za 30 dní ${forecastLabel}">${grid}<line x1="${todayX}" y1="${pad.top}" x2="${todayX}" y2="${H - pad.bottom}" stroke="#b8c2d2" stroke-dasharray="4 5"/><path d="${historyPath}" fill="none" stroke="#5279eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M${todayX},${latestY} L${forecastX},${forecastY}" fill="none" stroke="#8b6ce8" stroke-width="3.5" stroke-dasharray="8 7" stroke-linecap="round"/><circle cx="${todayX}" cy="${latestY}" r="5" fill="#fff" stroke="#5279eb" stroke-width="3"><title>Poslední hodnota: ${latestLabel}</title></circle><circle cx="${forecastX}" cy="${forecastY}" r="6" fill="#fff" stroke="#8b6ce8" stroke-width="3"><title>Scénář za 30 dní: ${forecastLabel}</title></circle><text class="projection-value-label" x="${Math.max(pad.left + 30, todayX - 10)}" y="${Math.max(pad.top + 18, latestY - 12)}" text-anchor="end">${latestLabel}</text><text class="projection-value-label" x="${forecastX - 6}" y="${Math.max(pad.top + 18, forecastY - 12)}" text-anchor="end">${forecastLabel}</text>${axisLabels}</svg><p class="projection-disclaimer">Extrapolace týdenních průměrů; skutečný průběh se může lišit.${clipped ? ' Hodnota je omezena rozsahem ukazatele.' : ''}</p></article>`;
+  }
+  function renderInsightForecastCharts(records) {
+    const host = $('#insight-forecast-grid');
+    if (!host) return;
+    const keys = ['sleepScore', 'sleepDuration', 'restingHr', 'steps', 'stress', 'spo2Avg'];
+    host.innerHTML = keys.filter((key) => records.some((record) => record[key] !== null && record[key] !== undefined && record[key] !== '' && Number.isFinite(Number(record[key]))))
+      .map((key) => buildProjectionCard(records, key)).join('') || '<div class="projection-empty">V datech zatím nejsou ukazatele pro výhled.</div>';
+  }
   function renderInsights() {
     const daily = sleepRecords.filter((r) => r.type === 'daily').sort((a,b) => a.date.localeCompare(b.date));
     const nights = daily.filter(isSleepRecord), activities = [...activityRecords].sort((a,b) => a.date.localeCompare(b.date));
     const weights = weightRecords.map((r) => ({...r,date:r.measuredAt?.slice(0,10)||''})).filter((r)=>r.date);
     const dates = [...daily,...activities,...weights].map((r)=>r.date).filter(Boolean).sort();
     const host = $('#insights-grid'), forecast = $('#forecast-grid');
+    renderInsightForecastCharts(daily);
     if (!dates.length) { host.innerHTML='<article class="hypothesis-card"><strong>Nejdriv potrebuji data</strong><span>Po importu Garminu a nekolika merenich vahy se zobrazi osobni scenare.</span></article>'; forecast.innerHTML=''; return; }
     const latest=dates.at(-1), shift=(iso,n)=>{const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);};
     const value=(r,k)=>r&&r[k]!==''&&r[k]!=null&&Number.isFinite(Number(r[k]))?Number(r[k]):null;
@@ -878,13 +1198,18 @@
     const project30=points=>{if(!points||points.length<5)return null;const xs=points.map(p=>new Date(p.date+'T12:00:00').getTime()/86400000),ys=points.map(p=>p.value),span=xs.at(-1)-xs[0];if(span<21)return null;const mx=xs.reduce((a,b)=>a+b,0)/xs.length,my=ys.reduce((a,b)=>a+b,0)/ys.length,slope=xs.reduce((s,x,i)=>s+(x-mx)*(ys[i]-my),0)/(xs.reduce((s,x)=>s+(x-mx)**2,0)||1);return {value:ys.at(-1)+slope*30,count:points.length,span:Math.round(span)};};
     const vp=project30(vo2Projection), wp=project30(weightPts.map(r=>({date:r.date,value:value(r,'weight')})));
     forecast.innerHTML='<article class="insight-card accent-green"><span>Bezecky objem - dalsich 30 dni</span><strong>'+(recentRuns.length?fmt(recentKm,0)+' km':'Bez odhadu')+'</strong><small>'+(recentRuns.length?'Opakuje poslednich 30 dni, bez zohledneni zmeny treninku.':'V poslednich 30 dnech chybi behy.')+'</small></article><article class="insight-card accent-purple"><span>VO2 max - za 30 dni</span><strong>'+(vp?fmt(vp.value)+' ml/kg/min':'Bez projekce')+'</strong><small>'+(vp?'Linearni pokracovani '+vp.count+' mereni z '+vp.span+' dni.':'Potreba alespon 5 mereni rozlozenych do 3 tydnu.')+'</small></article><article class="insight-card accent-pink"><span>Hmotnost - za 30 dni</span><strong>'+(wp?fmt(wp.value)+' kg':'Nelze odhadnout')+'</strong><small>'+(wp?'Kratke pokracovani mereneho trendu.':'Jedno mereni neurci trend; pridej dalsi hodnoty.')+'</small></article>';
-    const dm=$('#insight-daily-metric').value,am=$('#insight-activity-metric').value,wm=$('#insight-weight-metric').value;
-    $('#insight-daily-subtitle').textContent='Cela historie - '+daily.length+' dennich zaznamu';$('#insight-daily-chart').innerHTML=buildTrend(daily,dm);
-    $('#insight-activity-subtitle').textContent='Cela historie - '+activities.length+' aktivit';$('#insight-activity-chart').innerHTML=buildActivityTrend(activities,am);
-    $('#insight-weight-subtitle').textContent='Cela historie - '+weights.length+' mereni';$('#insight-weight-chart').innerHTML=buildWeightTrend(weights,wm);
-    const sleepMap=new Map(nights.filter(r=>Number.isFinite(r.sleepScore)).map(r=>[r.date,r]));const stepsMap=new Map(daily.filter(r=>Number.isFinite(r.steps)).map(r=>[r.date,r.steps]));const activityMap=new Map();activities.forEach(r=>activityMap.set(r.date,(activityMap.get(r.date)||0)+(Number.isFinite(r.distance)?r.distance:0)));
-    const pairs=[...sleepMap].map(([date,r])=>({score:r.sleepScore,duration:r.sleepDuration,steps:stepsMap.get(date),km:activityMap.get(date)||0}));
-    const relations=[['Skore spanku a kroky','steps','score'],['Skore spanku a vzdalenost','km','score'],['Delka spanku a kroky','steps','duration']];
+    const insightDailyKeys=['sleepScore','sleepDuration','restingHr','steps','stress','spo2Avg','bodyBatteryChange','breathingAvg','trainingLoad','totalCalories'];
+    const insightActivityKeys=['distance','duration','avgHr','pace','calories','trainingLoad','vo2Max'];
+    const insightWeightKeys=['weight','bmi','bodyFat','skeletalMuscle','muscleMass','bodyWater'];
+    $('#insight-daily-subtitle').textContent='Celá historie · '+daily.length+' denních záznamů';
+    chartCards($('#insight-daily-chart'),metricDefinitions(insightDailyKeys,metricInfo),(key)=>buildTrend(daily,key),(key)=>daily.some(r=>r[key]!=null&&r[key]!==''&&Number.isFinite(Number(r[key]))),'V historii zatím nejsou denní metriky.');
+    $('#insight-activity-subtitle').textContent='Celá historie · '+activities.length+' aktivit';
+    chartCards($('#insight-activity-chart'),metricDefinitions(insightActivityKeys,activityInfo),(key)=>buildActivityTrend(activities,key),(key)=>activities.some(r=>r[key]!=null&&r[key]!==''&&Number.isFinite(Number(r[key]))),'V historii zatím nejsou aktivity.');
+    $('#insight-weight-subtitle').textContent='Celá historie · '+weights.length+' měření';
+    chartCards($('#insight-weight-chart'),metricDefinitions(insightWeightKeys,weightMetricInfo),(key)=>buildWeightTrend(weights,key),(key)=>weights.some(r=>weightMetricInfo[key].get(r)!=null&&weightMetricInfo[key].get(r)!==''&&Number.isFinite(Number(weightMetricInfo[key].get(r)))),'V historii zatím nejsou měření.');
+    const sleepMap=new Map(nights.filter(r=>Number.isFinite(r.sleepScore)).map(r=>[r.date,r]));const dailyMap=new Map(daily.map(r=>[r.date,r]));const stepsMap=new Map(daily.filter(r=>Number.isFinite(r.steps)).map(r=>[r.date,r.steps]));const activityMap=new Map();activities.forEach(r=>activityMap.set(r.date,(activityMap.get(r.date)||0)+(Number.isFinite(r.distance)?r.distance:0)));
+    const pairs=[...sleepMap].map(([date,r])=>{const d=dailyMap.get(date)||{};return {score:r.sleepScore,duration:r.sleepDuration,steps:stepsMap.get(date),km:activityMap.get(date)||0,battery:d.bodyBatteryChange,restingHr:d.restingHr,trainingLoad:d.trainingLoad};});
+    const relations=[['Skóre spánku a kroky','steps','score'],['Skóre spánku a vzdálenost','km','score'],['Délka spánku a kroky','steps','duration'],['Skóre spánku a změna Body Battery','battery','score'],['Klidový tep a změna Body Battery','restingHr','battery'],['Tréninková zátěž a změna Body Battery','trainingLoad','battery']];
     $('#insight-correlation-content').innerHTML='<div class="correlation-grid">'+relations.map(([label,x,y])=>{const sample=pairs.filter(r=>Number.isFinite(r[x])&&Number.isFinite(r[y]));if(sample.length<8)return '<article><strong>'+esc(label)+'</strong><b>Malo sparovanych dat</b><small>'+sample.length+' spolecnych dni; potreba alespon 8.</small></article>';const rho=correlation(sample.map(r=>r[x]),sample.map(r=>r[y]));const msg=Math.abs(rho)<.25?'Bez vyrazne vazby v tomto vzorku.':rho>0?'Hodnoty zde rostou spolecne.':'Hodnoty zde meni smer opacne.';return '<article><strong>'+esc(label)+'</strong><b>rho = '+fmt(rho,2)+'</b><small>'+msg+' '+sample.length+' dni; vztah neprokazuje pricinu.</small></article>';}).join('')+'</div>';
   }
   function renderActivityList(records) {
@@ -933,16 +1258,18 @@
   }
   function buildWeightTrend(records, metric) {
     const info = weightMetricInfo[metric];
-    const points = records.map((r) => ({ date: r.measuredAt.slice(0, 10), raw: info.get(r) })).filter((p) => p.raw !== '' && p.raw !== null && p.raw !== undefined && Number.isFinite(Number(p.raw))).map((p) => ({ date: p.date, value: Number(p.raw) })).sort((a, b) => a.date.localeCompare(b.date));
+    const rawPoints = records.map((r) => ({ date: r.measuredAt.slice(0, 10), raw: info.get(r) })).filter((p) => p.raw !== '' && p.raw !== null && p.raw !== undefined && Number.isFinite(Number(p.raw))).map((p) => ({ date: p.date, value: Number(p.raw) })).sort((a, b) => a.date.localeCompare(b.date));
+    const points = downsampleTrendPoints(rawPoints);
     if (!points.length) return '<div class="chart-empty"><strong>Pro tuto hodnotu zatím nejsou měření</strong><span>Zadej hodnotu ve formuláři nebo vyber jinou metriku.</span></div>';
-    if (points.length === 1) return `<div class="chart-empty"><strong>1 měření · ${esc(fmtDate(points[0].date))}: ${esc(weightValueText(points[0].value, info.unit))}</strong><span>Pro zobrazení vývoje přidej další měření.</span></div>`;
-    const width = 700, height = 170, pad = { l: 26, r: 10, t: 12, b: 25 }, values = points.map((p) => p.value);
+    if (points.length === 1) return singlePointChart(points[0].date, weightValueText(points[0].value, info.unit), info.label, '#8b6ce8');
+    const width = 700, height = 230, pad = { l: 26, r: 10, t: 12, b: 25 }, values = points.map((p) => p.value);
     let min = Math.min(...values), max = Math.max(...values); if (min === max) { min -= 1; max += 1; }
     const margin = (max - min) * .15; min -= margin; max += margin;
     const x = (i) => pad.l + i * (width - pad.l - pad.r) / (points.length - 1), y = (v) => pad.t + (max - v) * (height - pad.t - pad.b) / (max - min);
     const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
     const labels = [points[0], points[Math.floor((points.length - 1) / 2)], points.at(-1)], xs = [x(0), x(Math.floor((points.length - 1) / 2)), x(points.length - 1)];
-    return `<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Vývoj: ${esc(info.label)}"><line class="grid" x1="${pad.l}" y1="${pad.t}" x2="${width - pad.r}" y2="${pad.t}"/><line class="grid" x1="${pad.l}" y1="${(height - pad.b + pad.t) / 2}" x2="${width - pad.r}" y2="${(height - pad.b + pad.t) / 2}"/><line class="grid" x1="${pad.l}" y1="${height - pad.b}" x2="${width - pad.r}" y2="${height - pad.b}"/><path class="line" d="${path}"/>${points.map((p, i) => `<circle class="point" cx="${x(i)}" cy="${y(p.value)}" r="3"><title>${esc(fmtDate(p.date))}: ${esc(weightValueText(p.value, info.unit))}</title></circle>`).join('')}${labels.map((p, i) => `<text x="${xs[i]}" y="${height - 5}" text-anchor="${i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}">${esc(fmtDate(p.date, { day: 'numeric', month: 'short' }))}</text>`).join('')}</svg>`;
+    const valueLabels = chartValueLabels(points, x, y, (point) => weightValueText(point.value, info.unit));
+    return `<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Vývoj: ${esc(info.label)}"><line class="grid" x1="${pad.l}" y1="${pad.t}" x2="${width - pad.r}" y2="${pad.t}"/><line class="grid" x1="${pad.l}" y1="${(height - pad.b + pad.t) / 2}" x2="${width - pad.r}" y2="${(height - pad.b + pad.t) / 2}"/><line class="grid" x1="${pad.l}" y1="${height - pad.b}" x2="${width - pad.r}" y2="${height - pad.b}"/><path class="line" d="${path}"/>${points.map((p, i) => `<circle class="point" cx="${x(i)}" cy="${y(p.value)}" r="3"><title>${esc(fmtDate(p.date))}: ${esc(weightValueText(p.value, info.unit))}</title></circle>`).join('')}${valueLabels}${labels.map((p, i) => `<text x="${xs[i]}" y="${height - 5}" text-anchor="${i === 0 ? 'start' : i === 2 ? 'end' : 'middle'}">${esc(fmtDate(p.date, { day: 'numeric', month: 'short' }))}</text>`).join('')}</svg>`;
   }
   function renderWeightDashboard(records) {
     const sorted = [...records].sort((a, b) => a.measuredAt.localeCompare(b.measuredAt)), latest = sorted.at(-1), previousWeights = sorted.filter((r) => Number.isFinite(weightMetricInfo.weight.get(r)));
@@ -954,25 +1281,34 @@
     $('#weight-fat-average').textContent = fat === null ? '—' : `${fat.toFixed(1).replace('.', ',')} %`;
     const delta = previousWeights.length > 1 ? weightMetricInfo.weight.get(previousWeights.at(-1)) - weightMetricInfo.weight.get(previousWeights.at(-2)) : null;
     $('#weight-change').textContent = delta === null ? '—' : `${delta > 0 ? '+' : ''}${delta.toFixed(1).replace('.', ',')} kg`;
-    const metric = $('#weight-chart-metric').value;
-    $('#weight-chart-subtitle').textContent = `${weightMetricInfo[metric].label} · ${records.length} měření v období`;
-    $('#weight-trend-chart').innerHTML = buildWeightTrend(records, metric);
+    const weightKeys = ['weight', 'bmi', 'bodyFat', 'skeletalMuscle', 'muscleMass', 'protein', 'bmr', 'fatFreeWeight', 'subcutaneousFat', 'visceralFat', 'bodyWater', 'boneMass', 'metabolicAge'];
+    $('#weight-chart-subtitle').textContent = `${records.length} měření · všechny dostupné hodnoty`;
+    chartCards($('#weight-trend-chart'), metricDefinitions(weightKeys, weightMetricInfo), (key) => buildWeightTrend(records, key), (key) => records.some((r) => weightMetricInfo[key].get(r) !== null && weightMetricInfo[key].get(r) !== '' && Number.isFinite(Number(weightMetricInfo[key].get(r)))), 'V tomto období nejsou měření tělesných hodnot.');
     const composition = $('#weight-latest-composition');
     const items = [['bodyFat', 'Tělesný tuk'], ['bmi', 'BMI'], ['skeletalMuscle', 'Kosterní svaly'], ['muscleMass', 'Svalová hmota'], ['protein', 'Protein'], ['bmr', 'BMR'], ['fatFreeWeight', 'Hmotnost bez tuku'], ['subcutaneousFat', 'Podkožní tuk'], ['visceralFat', 'Vnitřní tuk'], ['bodyWater', 'Voda v těle'], ['boneMass', 'Kostní hmota'], ['metabolicAge', 'Metabolický věk']];
     composition.innerHTML = latest ? items.map(([key, label]) => `<div><small>${esc(label)}</small><strong>${esc(weightValueText(weightMetricInfo[key].get(latest), weightMetricInfo[key].unit))}</strong></div>`).join('') : '<div class="weight-chart-empty">Po uložení prvního měření se zde zobrazí celé složení těla.</div>';
   }
   function renderOverviewCharts(records, activities, range) {
-    const activityMetric = $('#overview-activity-metric').value;
-    const weightMetric = $('#overview-weight-metric').value;
-    const sleepMetric = $('#overview-sleep-metric').value;
+    const daily = records.filter((r) => r.type !== 'weekly');
     const weights = weightRecords.filter((r) => inRange({ date: r.measuredAt?.slice(0, 10) || '' }, range));
     const nights = records.filter(isSleepRecord);
-    $('#overview-activity-subtitle').textContent = `${activityInfo[activityMetric].label} · ${activities.length} aktivit`;
-    $('#overview-activity-chart').innerHTML = buildActivityTrend(activities, activityMetric);
-    $('#overview-weight-subtitle').textContent = `${weightMetricInfo[weightMetric].label} · ${weights.length} měření`;
-    $('#overview-weight-chart').innerHTML = buildWeightTrend(weights, weightMetric);
-    $('#overview-sleep-subtitle').textContent = `${metricInfo[sleepMetric].label} · ${nights.length} nocí`;
-    $('#overview-sleep-chart').innerHTML = buildTrend(nights, sleepMetric);
+    const overviewDaily = metricDefinitions(['sleepScore', 'sleepDuration', 'restingHr', 'steps', 'stress', 'spo2Avg', 'bodyBatteryChange', 'breathingAvg', 'trainingLoad', 'totalCalories'], metricInfo);
+    chartCards($('#overview-health-grid'), overviewDaily, (key) => buildTrend(daily, key), (key) => daily.some((r) => r[key] != null && r[key] !== '' && Number.isFinite(Number(r[key]))));
+
+    const activityKeys = ['distance', 'duration', 'avgHr', 'pace', 'calories', 'trainingLoad'];
+    const overviewActivity = metricDefinitions(activityKeys, activityInfo);
+    $('#overview-activity-subtitle').textContent = `${activities.length} aktivit · dostupné ukazatele`;
+    chartCards($('#overview-activity-chart'), overviewActivity, (key) => buildActivityTrend(activities, key), (key) => activities.some((r) => r[key] != null && r[key] !== '' && Number.isFinite(Number(r[key]))));
+
+    const weightKeys = ['weight', 'bmi', 'bodyFat', 'skeletalMuscle', 'muscleMass', 'bodyWater'];
+    const overviewWeight = metricDefinitions(weightKeys, weightMetricInfo);
+    $('#overview-weight-subtitle').textContent = `${weights.length} měření · dostupné hodnoty`;
+    chartCards($('#overview-weight-chart'), overviewWeight, (key) => buildWeightTrend(weights, key), (key) => weights.some((r) => weightMetricInfo[key].get(r) !== null && weightMetricInfo[key].get(r) !== '' && Number.isFinite(Number(weightMetricInfo[key].get(r)))));
+
+    const sleepKeys = ['sleepScore', 'sleepDuration', 'restingHr', 'stress', 'spo2Avg', 'bodyBatteryChange', 'breathingAvg'];
+    const overviewSleep = metricDefinitions(sleepKeys, metricInfo);
+    $('#overview-sleep-subtitle').textContent = `${nights.length} nocí · dostupné ukazatele`;
+    chartCards($('#overview-sleep-chart'), overviewSleep, (key) => buildTrend(nights, key), (key) => nights.some((r) => r[key] != null && r[key] !== '' && Number.isFinite(Number(r[key]))));
   }
   function renderSleepDashboard(records) {
     const daily = records.filter((r) => r.type === 'daily'), source = daily.length ? daily : records.filter((r) => r.type === 'weekly');
@@ -992,9 +1328,9 @@
     $('#sleep-page-deep').textContent = fmtDuration(deep);
     $('#sleep-page-rem').textContent = fmtDuration(rem);
     $('#sleep-page-spo2').textContent = spo2 === null ? '—' : `${spo2.toFixed(1).replace('.', ',')} %`;
-    const metric = $('#sleep-chart-metric').value;
-    $('#sleep-chart-subtitle').textContent = `${metricInfo[metric].label} · ${source.length} záznamů v období`;
-    $('#sleep-page-trend').innerHTML = buildTrend(source, metric);
+    const sleepKeys = ['sleepScore', 'sleepDuration', 'deepSleep', 'lightSleep', 'remSleep', 'restingHr', 'stress', 'spo2Avg', 'bodyBatteryChange', 'breathingAvg'];
+    $('#sleep-chart-subtitle').textContent = `${source.length} záznamů · všechny dostupné ukazatele`;
+    chartCards($('#sleep-page-trend'), metricDefinitions(sleepKeys, metricInfo), (key) => buildTrend(source, key), (key) => source.some((r) => r[key] != null && r[key] !== '' && Number.isFinite(Number(r[key]))), 'Pro toto období nejsou spánková data.');
     updateComposition(daily, 'sleep-page-composition');
   }
   function renderWeights() {
@@ -1036,7 +1372,8 @@
     setNote('note-spo2', avgSpo2 === null ? 'Přidá se z denních reportů' : (daily.some((r) => r.spo2Source === 'denní') ? 'Průměr z denních Garmin dat' : 'Průměr během spánku'));
     $('#stress-status').textContent = avgStress === null ? '—' : avgStress < 25 ? 'Nízký' : avgStress < 50 ? 'Střední' : 'Vyšší';
     $('#steps-progress').style.width = avgSteps === null ? '0%' : `${Math.min(100, avgSteps / 7500 * 100)}%`;
-    $('#range-caption').textContent = $('#range-select').value === 'all' ? 'Všechna importovaná data' : `${fmtDate(range.start)} – ${fmtDate(range.end)}`;
+    const rangeChoice = $('#range-select').value;
+    $('#range-caption').textContent = rangeChoice === 'all' ? 'Všechna importovaná data' : rangeChoice === 'today' ? `Dnes · ${fmtDate(range.end)}` : rangeChoice === 'yesterday' ? `Včera · ${fmtDate(range.end)}` : rangeChoice === 'month' ? `Tento měsíc · ${fmtDate(range.start)} – ${fmtDate(range.end)}` : rangeChoice === 'previous-month' ? `Minulý měsíc · ${fmtDate(range.start)} – ${fmtDate(range.end)}` : `${fmtDate(range.start)} – ${fmtDate(range.end)}`;
     if ($('#sleep-range-caption')) $('#sleep-range-caption').textContent = $('#range-caption').textContent;
     $('#data-count').textContent = sleepRecords.length ? `${sleepRecords.length} denních záznamů Garminu` : 'Čekám na první import';
     $('#activity-steps').textContent = avgSteps === null ? '—' : Math.round(avgSteps).toLocaleString('cs-CZ');
@@ -1054,7 +1391,7 @@
     $('#activity-count').textContent = activities.length.toLocaleString('cs-CZ');
     $('#activity-avg-pace').textContent = Number.isFinite(avgPace) ? fmtPace(avgPace) : '—';
     $('#activity-avg-hr').textContent = activityHr === null ? '—' : Math.round(activityHr).toLocaleString('cs-CZ');
-    renderActivityCharts(activities); renderHypothesis(range); renderActivityList(activities); renderOverviewCharts(records, activities, range); renderInsights(); updateTimeline(range);
+    renderGarminQuickOverview(records, activities); renderBattery(daily); renderActivityCharts(activities); renderHypothesis(range); renderActivityList(activities); renderOverviewCharts(records, activities, range); renderInsights(); updateTimeline(range);
     const chartKey = $('#chart-metric').value;
     $('#chart-subtitle').textContent = `${metricInfo[chartKey].label} · ${summary.length} ${summary.length === 1 ? 'záznam' : 'záznamů'} v období`;
     $('#trend-chart').innerHTML = buildTrend(chartKey === 'steps' ? records : summary, chartKey);
@@ -1147,9 +1484,36 @@
   mountActivityStats();
   mountWeightForm();
   mountWeightDashboard();
+  mountGarminQuickOverview();
+  mountOverviewHealthCharts();
+  mountInsightForecastCharts();
+  ['chart-metric', 'overview-activity-metric', 'overview-weight-metric', 'overview-sleep-metric', 'sleep-chart-metric', 'activity-chart-metric', 'weight-chart-metric', 'insight-daily-metric', 'insight-activity-metric', 'insight-weight-metric'].forEach((id) => $(`#${id}`)?.classList.add('hidden'));
+  $('#garmin-sync-button').addEventListener('click', async () => {
+    const button = $('#garmin-sync-button'), status = $('#garmin-sync-status');
+    button.disabled = true;
+    button.textContent = 'Synchronizuji…';
+    status.textContent = 'Připojuji se ke Garmin Connect. První přihlášení může vyžádat heslo nebo MFA kód v okně Python serveru.';
+    try {
+      const response = await fetch('/api/garmin/sync', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days: 30 }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Synchronizace se nezdařila.');
+      mergeAppData(result.data);
+      status.textContent = `Hotovo: ${result.days} denních záznamů a ${result.activities} aktivit. Aktualizováno ${new Date().toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}.`;
+      showToast('Data z Garmin Connect byla synchronizována.');
+    } catch (error) {
+      status.textContent = error instanceof SyntaxError
+        ? 'Server nevrátil odpověď synchronizace. Spusť py server.py a otevři stránku na jeho adrese.'
+        : error.message || 'Synchronizace se nezdařila. Zkontroluj, že běží server a je nastavený .env.';
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Synchronizovat Garmin';
+    }
+  });
   $$('.nav-link').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.page)));
-  $('#storage-folder-button').addEventListener('click', connectDataDirectory);
-  $('#storage-notice-action').addEventListener('click', connectDataDirectory);
+  $('#storage-folder-button').addEventListener('click', chooseDataSource);
+  $('#storage-notice-action').addEventListener('click', chooseDataSource);
   document.addEventListener('click', (event) => {
     if (event.target.closest('[data-storage-reselect]')) { connectDataDirectory(); return; }
     const goto = event.target.closest('[data-goto]');
@@ -1185,6 +1549,12 @@
   });
   $('#csv-input').addEventListener('change', (event) => handleImport(event.target.files));
   $('#folder-input').addEventListener('change', (event) => handleImport(event.target.files));
+  $('#load-json-button').addEventListener('click', () => $('#app-json-input').click());
+  $('#app-json-input').addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (file) await loadAppDataFile(file);
+    event.target.value = '';
+  });
   $('#body-image-input').addEventListener('change', async (event) => {
     const image = event.target.files?.[0]; if (!image) return;
     const status = $('#body-image-status'); status.textContent = 'Načítám OCR. Při prvním použití se stáhne rozpoznávací model; obrázek zůstává v tomto zařízení.';
@@ -1246,10 +1616,12 @@
   $('#today-label').textContent = new Intl.DateTimeFormat('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' }).format(today).toLocaleUpperCase('cs-CZ');
   const updateLiveClock = () => { $('#live-clock').textContent = new Intl.DateTimeFormat('cs-CZ', { hour: '2-digit', minute: '2-digit' }).format(new Date()); };
   updateLiveClock(); setInterval(updateLiveClock, 30_000);
+  $('#range-select').value = 'today';
   $('#range-from').value = localDateString(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29));
   $('#range-to').value = localDateString(today);
   $('[name="measuredAt"]').value = toDateInputValue(today);
   if (normalizeStoredActivities()) writeStore(STORE.activity, activityRecords);
+  if (normalizeStoredSleepDurations()) writeStore(STORE.sleep, sleepRecords);
   renderImports(); renderWeights(); updateDashboard();
   initializeDataDirectory().then(hydrateFromAppDataFile);
   const initialPage = location.hash.slice(1);

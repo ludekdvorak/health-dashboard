@@ -1,1 +1,5 @@
 health-data.json
+.env
+.garminconnect/
+__pycache__/
+.venv/

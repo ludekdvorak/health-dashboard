@@ -30,3 +30,150 @@
 /* Speculative outlook cards and full-history insight layout. */
 .hypothesis-section{margin-bottom:16px}.hypothesis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0 0 16px}.hypothesis-card{min-width:0;background:#fff;border:1px solid #e9edf3;border-top:3px solid var(--tone,#5279eb);border-radius:11px;box-shadow:var(--shadow);padding:17px;display:grid;gap:10px}.hypothesis-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.hypothesis-card-head>span{font-size:10px;font-weight:700;color:#66748a}.hypothesis-card-head>small{border-radius:10px;background:#f5f7fb;padding:4px 7px;font-size:8px;color:#8490a3;white-space:nowrap}.hypothesis-card>strong{font:600 14px/1.5 Manrope,sans-serif;color:#2b3850}.hypothesis-card>p{margin:0;font-size:9px;line-height:1.55;color:#929daf}.forecast-grid .insight-card{min-height:130px}.insight-charts-section{margin:16px 0}.insight-charts-section>.section-heading{margin-bottom:12px}body[data-page="insights"] .global-period-controls{display:none}
 @media(max-width:700px){.hypothesis-grid{grid-template-columns:1fr}}
+.battery-section{margin:22px 0}.battery-layout{display:grid;grid-template-columns:minmax(220px,.78fr) minmax(0,1.8fr);gap:14px}.battery-stats{display:grid;grid-template-columns:1fr 1fr;gap:9px}.battery-stat{padding:13px 14px;background:#fff;border:1px solid #e9edf3;border-radius:10px;box-shadow:var(--shadow);display:grid;gap:6px}.battery-stat:first-child{grid-column:1/-1;background:linear-gradient(135deg,#f0faf5,#fff);border-color:#dcefe5}.battery-stat span{font-size:9px;font-weight:600;color:#7e8a9d}.battery-stat strong{font:700 19px Manrope,sans-serif;color:#283c4a}.battery-stat small{font-size:8px;color:#9ba5b3}.battery-stat:first-child strong{font-size:23px;color:#278564}.battery-note{grid-column:1/-1;margin:1px 2px 0;font-size:9px;line-height:1.55;color:#8d98a8}.battery-chart-panel{min-width:0;min-height:220px}.battery-legend{display:flex;gap:10px;flex-wrap:wrap}.battery-legend span{display:flex;align-items:center;gap:5px;font-size:8px;color:#8b96a6}.battery-legend i{width:7px;height:7px;border-radius:50%;background:#42b988}.battery-legend span+span i{background:#ec9a63}.battery-svg-wrap{height:170px;margin-top:10px}.battery-svg{width:100%;height:100%;overflow:visible}.battery-svg text{font:8px "DM Sans",sans-serif;fill:#9aa4b4}.battery-grid{stroke:#edf0f5;stroke-width:1;stroke-dasharray:3 4}.battery-line{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.battery-line.charged{stroke:#42b988}.battery-line.drained{stroke:#ec9a63}.battery-point{fill:#fff;stroke-width:1.6}.battery-point.charged{stroke:#42b988}.battery-point.drained{stroke:#ec9a63}.app-data-load{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 17px;margin-bottom:14px}.app-data-load>div{display:grid;gap:4px}.app-data-load strong{font-size:11px;color:#43516b}.app-data-load span{font-size:9px;line-height:1.5;color:#8d98a8}.app-data-load .button{flex-shrink:0}
+@media(max-width:820px){.battery-layout{grid-template-columns:1fr}.battery-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.battery-stat:first-child{grid-column:auto}.battery-note{grid-column:1/-1}}
+@media(max-width:560px){.battery-stats{grid-template-columns:1fr 1fr}.battery-stat:first-child{grid-column:1/-1}.app-data-load{align-items:flex-start;flex-direction:column}.app-data-load .button{width:100%}}
+
+.garmin-sync-panel{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 18px;padding:15px 18px;margin-bottom:14px}.garmin-sync-panel>div{display:grid;gap:4px}.garmin-sync-panel strong{font-size:11px;color:#43516b}.garmin-sync-panel span,.garmin-sync-panel p{font-size:9px;line-height:1.5;color:#8d98a8}.garmin-sync-panel p{grid-column:1/-1;margin:0}.garmin-sync-panel button{grid-column:2;grid-row:1/3}.garmin-sync-panel button:disabled{opacity:.65;cursor:wait}@media(max-width:560px){.garmin-sync-panel{grid-template-columns:1fr}.garmin-sync-panel button{grid-column:auto;grid-row:auto;width:100%}.garmin-sync-panel p{grid-column:auto}}
+.battery-level-heading{margin-top:18px;padding-top:14px;border-top:1px solid #edf0f5}.battery-level-wrap{height:190px}
+.battery-stat-current{background:linear-gradient(135deg,#eaf8f1,#fff);border-color:#d7eee2}.battery-stat-current strong{color:#218b63!important;font-size:25px!important}.battery-stat:not(:first-child){grid-column:auto}
+.overview-health-charts{margin:23px 0}.overview-health-charts>.section-heading{margin-bottom:12px}.metric-trend-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0}.metric-trend-card{min-width:0;padding:10px 12px;min-height:190px;overflow:hidden}.metric-trend-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px}.metric-trend-heading strong{font-size:10px;color:#33445a}.metric-trend-heading span{font-size:8px;color:#9aa4b2}.metric-trend-card .chart-empty{height:auto;min-height:85px;padding:14px 8px}.metric-trend-card .trend-svg,.metric-trend-card .activity-trend-svg,.metric-trend-card .weight-trend-svg{width:100%;height:145px;display:block}.metric-trend-card .chart-empty strong{font-size:9px}.metric-trend-card .chart-empty span{font-size:8px}
+#overview-health-grid.metric-trend-grid{grid-template-columns:repeat(3,minmax(0,1fr))}#activity-trend-chart,#sleep-page-trend{grid-template-columns:repeat(3,minmax(0,1fr))}
+#page-overview .lower-grid{grid-template-columns:1fr}#page-overview .lower-grid>.trend-panel{display:none}.overview-trend-grid{align-items:start}.overview-trend-grid>.panel{min-height:0}.overview-trend-grid .panel-heading select{display:none}.overview-trend-grid #overview-activity-chart,.overview-trend-grid #overview-weight-chart,.overview-trend-grid #overview-sleep-chart{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;height:auto}.overview-trend-grid .metric-trend-card{box-shadow:none;background:#fbfcfe;border-color:#edf0f5;min-height:150px}.overview-trend-grid .metric-trend-card .trend-svg,.overview-trend-grid .metric-trend-card .activity-trend-svg,.overview-trend-grid .metric-trend-card .weight-trend-svg{height:120px}
+#activity-trend-chart,#sleep-page-trend,#weight-trend-chart,#insight-daily-chart,#insight-activity-chart,#insight-weight-chart{height:auto!important;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.activity-charts>.panel:first-child{min-width:0}.activity-charts .panel-heading select,.sleep-page-charts .panel-heading select,.weight-chart-panel .panel-heading select,.insight-charts-grid .panel-heading select,.trend-panel .panel-heading select{display:none}
+.sleep-page-charts{grid-template-columns:minmax(0,1.5fr) minmax(220px,.8fr)}.weight-chart-panel{min-width:0}.weight-chart-panel>#weight-trend-chart{grid-template-columns:repeat(3,minmax(0,1fr))}.insight-charts-grid>.panel{min-width:0;overflow:hidden}.insight-charts-grid .metric-trend-card{box-shadow:none;background:#fbfcfe;min-height:155px}.insight-charts-grid .metric-trend-card .trend-svg,.insight-charts-grid .metric-trend-card .activity-trend-svg,.insight-charts-grid .metric-trend-card .weight-trend-svg{height:120px}
+@media(max-width:980px){#overview-health-grid.metric-trend-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-trend-grid{grid-template-columns:1fr 1fr}.overview-trend-grid>.panel:last-child{grid-column:1/-1}.overview-trend-grid #overview-activity-chart,.overview-trend-grid #overview-weight-chart,.overview-trend-grid #overview-sleep-chart{grid-template-columns:1fr}.weight-chart-panel>#weight-trend-chart{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.metric-trend-grid,#overview-health-grid.metric-trend-grid,#activity-trend-chart,#sleep-page-trend,#weight-trend-chart,#insight-daily-chart,#insight-activity-chart,#insight-weight-chart{grid-template-columns:1fr}.overview-trend-grid{grid-template-columns:1fr}.overview-trend-grid>.panel:last-child{grid-column:auto}.sleep-page-charts{grid-template-columns:1fr}.weight-chart-panel>#weight-trend-chart{grid-template-columns:1fr}.metric-trend-card{min-height:165px}.metric-trend-card .trend-svg,.metric-trend-card .activity-trend-svg,.metric-trend-card .weight-trend-svg{height:135px}}
+
+/* Garmin-style overview tiles and larger, readable charts */
+#page-overview>.section-heading,#page-overview>.metrics-grid{display:none}
+.garmin-quick-overview{margin:4px 0 27px}
+.garmin-quick-overview>.section-heading{margin-bottom:15px}
+.garmin-quick-overview>.section-heading h2{font:600 21px Manrope,sans-serif;letter-spacing:-.5px;color:#273348}
+.garmin-quick-overview>.section-heading p{font-size:12px;color:#7e899b}
+.quick-overview-count{font-size:11px;color:#8792a4}
+.garmin-quick-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}
+.quick-card{--quick-tone:#5279eb;position:relative;min-width:0;min-height:225px;padding:17px 18px 14px;background:#fff;border:1px solid #e4e8ef;border-radius:13px;box-shadow:0 2px 5px rgba(34,48,75,.09),0 8px 20px rgba(34,48,75,.04);display:flex;flex-direction:column;overflow:hidden}
+.quick-card:before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--quick-tone);opacity:.82}
+.quick-card-head{display:flex;align-items:center;gap:9px;min-height:27px;color:#263248}
+.quick-card-head strong{font-size:13px;font-weight:600}
+.quick-icon{width:25px;height:25px;display:grid;place-items:center;color:var(--quick-tone);font-size:20px;font-weight:700}
+.quick-value{font:500 clamp(22px,2vw,30px) Manrope,sans-serif;letter-spacing:-.7px;color:#28364b;margin-top:13px;line-height:1.2;white-space:nowrap}
+.quick-value small{font:500 12px "DM Sans",sans-serif;letter-spacing:0;color:#7f8b9e}
+.quick-note{font-size:11px;color:#8994a5;margin-top:5px;min-height:16px}
+.quick-sparkline{height:74px;margin-top:auto;padding-top:12px}
+.quick-sparkline svg{width:100%;height:100%;overflow:visible}
+.quick-ring-wrap{height:105px;margin-top:auto;display:flex;align-items:center;justify-content:center;position:relative}
+.quick-ring-wrap svg{width:88px;height:88px;transform:rotate(0)}
+.quick-ring-wrap strong,.quick-ring-empty{position:absolute;font:500 20px Manrope,sans-serif;color:#28364b}
+.quick-ring-empty{color:#b2bbc8}
+.quick-empty-visual{height:74px;margin-top:auto;display:flex;align-items:center;justify-content:center;color:#abb4c1;font-size:11px}
+.quick-overview-count{padding:5px 9px;border:1px solid #e5e9f0;border-radius:20px;background:#fff}
+.metric-trend-grid,#overview-health-grid.metric-trend-grid,#activity-trend-chart,#sleep-page-trend,#weight-trend-chart,#insight-daily-chart,#insight-activity-chart,#insight-weight-chart{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.metric-trend-card{padding:17px 19px;min-height:294px;border-radius:13px;box-shadow:0 3px 12px rgba(34,48,75,.06)}
+.metric-trend-heading{margin-bottom:8px;gap:12px}
+.metric-trend-heading strong{font-size:14px;color:#29364c}
+.metric-trend-heading span{font-size:11px;color:#8390a3}
+.metric-trend-card .trend-svg,.metric-trend-card .activity-trend-svg,.metric-trend-card .weight-trend-svg{height:225px;margin-top:8px;overflow:visible}
+.trend-svg text{font-size:16px;fill:#748197}
+.trend-svg .point-value{font-size:19px;font-weight:700;fill:#35425a;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
+.trend-svg .line{stroke-width:3}
+.trend-svg .point{stroke-width:2.5}
+.metric-trend-card .chart-empty{min-height:170px}
+.metric-trend-card .chart-empty strong{font-size:12px}
+.metric-trend-card .chart-empty span{font-size:11px}
+#overview-health-grid.metric-trend-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.overview-health-charts{margin:30px 0}
+.battery-svg-wrap{height:240px}
+.battery-chart-panel{padding:20px 22px}
+.battery-svg text{font-size:12px}
+.overview-trend-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.overview-trend-grid>.panel{min-height:320px;padding:19px 21px}
+.overview-trend-grid .trend-svg{height:230px}
+.activity-charts .trend-svg{height:220px}
+@media(max-width:1100px){.garmin-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.garmin-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.quick-card{min-height:205px;padding:14px 12px}.quick-card-head strong{font-size:11px}.quick-value{font-size:22px}.quick-note{font-size:10px}.metric-trend-grid,#overview-health-grid.metric-trend-grid,#activity-trend-chart,#sleep-page-trend,#weight-trend-chart,#insight-daily-chart,#insight-activity-chart,#insight-weight-chart{grid-template-columns:1fr}.metric-trend-card{min-height:270px;padding:15px}.metric-trend-card .trend-svg,.metric-trend-card .activity-trend-svg,.metric-trend-card .weight-trend-svg{height:205px}.overview-trend-grid{grid-template-columns:1fr}.overview-trend-grid>.panel{min-height:290px;padding:16px}.overview-trend-grid .trend-svg{height:210px}.battery-svg-wrap{height:205px}}
+@media(max-width:380px){.garmin-quick-grid{grid-template-columns:1fr}.quick-card{min-height:190px}}
+
+/* Let overview trend cards use the page grid instead of nested half-width grids. */
+.overview-trend-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:14px}
+.overview-trend-grid>.panel{display:contents}
+.overview-trend-grid>.panel>.panel-heading{grid-column:1/-1;min-height:0;padding:5px 2px 0;margin:9px 0 -3px}
+.overview-trend-grid #overview-activity-chart.metric-trend-grid,
+.overview-trend-grid #overview-weight-chart.metric-trend-grid,
+.overview-trend-grid #overview-sleep-chart.metric-trend-grid{display:contents!important}
+.overview-trend-grid #overview-activity-chart.chart-empty,
+.overview-trend-grid #overview-weight-chart.chart-empty,
+.overview-trend-grid #overview-sleep-chart.chart-empty{grid-column:1/-1;min-height:210px}
+.overview-trend-grid .metric-trend-card{min-height:310px;padding:19px 21px}
+.overview-trend-grid .metric-trend-card .trend-svg,
+.overview-trend-grid .metric-trend-card .activity-trend-svg,
+.overview-trend-grid .metric-trend-card .weight-trend-svg{height:238px}
+@media(max-width:700px){.overview-trend-grid{grid-template-columns:1fr}.overview-trend-grid .metric-trend-card{min-height:285px}.overview-trend-grid .metric-trend-card .trend-svg,.overview-trend-grid .metric-trend-card .activity-trend-svg,.overview-trend-grid .metric-trend-card .weight-trend-svg{height:218px}}
+
+/* Give Activity, Sleep and Body charts the full page width too. */
+.activity-charts{grid-template-columns:minmax(0,1fr)}
+.activity-charts>.panel{min-width:0}
+#activity-trend-chart,#sleep-page-trend,#weight-trend-chart{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+#activity-trend-chart .metric-trend-card,
+#sleep-page-trend .metric-trend-card,
+#weight-trend-chart .metric-trend-card{min-height:320px;padding:20px 22px}
+#activity-trend-chart .metric-trend-card .trend-svg,
+#sleep-page-trend .metric-trend-card .trend-svg,
+#weight-trend-chart .metric-trend-card .trend-svg{height:248px}
+.sleep-page-charts>.panel:last-child{min-height:270px}
+@media(max-width:700px){#activity-trend-chart,#sleep-page-trend,#weight-trend-chart{grid-template-columns:1fr;gap:12px}#activity-trend-chart .metric-trend-card,#sleep-page-trend .metric-trend-card,#weight-trend-chart .metric-trend-card{min-height:285px;padding:16px}#activity-trend-chart .metric-trend-card .trend-svg,#sleep-page-trend .metric-trend-card .trend-svg,#weight-trend-chart .metric-trend-card .trend-svg{height:220px}}
+
+/* Make the full-history insight charts as readable as the overview charts. */
+.insight-charts-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.insight-charts-grid>.panel{display:contents}
+.insight-charts-grid>.panel>.panel-heading{grid-column:1/-1;min-height:0;padding:7px 2px 0;margin:10px 0 -3px}
+.insight-charts-grid #insight-daily-chart.metric-trend-grid,
+.insight-charts-grid #insight-activity-chart.metric-trend-grid,
+.insight-charts-grid #insight-weight-chart.metric-trend-grid{display:contents!important}
+.insight-charts-grid #insight-daily-chart.chart-empty,
+.insight-charts-grid #insight-activity-chart.chart-empty,
+.insight-charts-grid #insight-weight-chart.chart-empty{grid-column:1/-1;min-height:210px}
+.insight-charts-grid .metric-trend-card{min-height:320px;padding:20px 22px;box-shadow:0 3px 12px rgba(34,48,75,.06);background:#fff}
+.insight-charts-grid .metric-trend-card .trend-svg,
+.insight-charts-grid .metric-trend-card .activity-trend-svg,
+.insight-charts-grid .metric-trend-card .weight-trend-svg{height:248px}
+.hypothesis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.hypothesis-card{min-height:205px;padding:22px;gap:14px}
+.hypothesis-card-head>span{font-size:13px}
+.hypothesis-card-head>small{font-size:10px;padding:5px 9px}
+.hypothesis-card>strong{font-size:17px;line-height:1.55}
+.hypothesis-card>p{font-size:12px;line-height:1.65}
+.forecast-grid{gap:15px}
+.forecast-grid .insight-card{min-height:185px;padding:21px;gap:12px}
+.forecast-grid .insight-card>span{font-size:12px}
+.forecast-grid .insight-card>strong{font-size:25px}
+.forecast-grid .insight-card>small{font-size:11px;line-height:1.6}
+.insight-intro{padding:19px 21px;font-size:13px;line-height:1.65}
+.insight-intro strong{font-size:15px}
+.hypothesis-panel{padding:20px 22px}
+.hypothesis-empty,.hypothesis-result{min-height:100px;padding:20px;gap:16px}
+.hypothesis-icon{flex-basis:42px;width:42px;height:42px;font-size:25px}
+.hypothesis-empty strong,.hypothesis-result strong{font-size:14px}
+.hypothesis-empty div>span,.hypothesis-result div>span{font-size:12px;line-height:1.6}
+@media(max-width:700px){.insight-charts-grid{grid-template-columns:1fr}.insight-charts-grid .metric-trend-card{min-height:285px;padding:16px}.insight-charts-grid .metric-trend-card .trend-svg,.insight-charts-grid .metric-trend-card .activity-trend-svg,.insight-charts-grid .metric-trend-card .weight-trend-svg{height:220px}.hypothesis-grid{grid-template-columns:1fr}.forecast-grid{grid-template-columns:1fr}}
+.insight-forecast-charts{margin:28px 0 22px}
+.insight-forecast-charts>.section-heading{margin-bottom:14px}
+.insight-forecast-charts>.section-heading h2{font:700 20px Manrope,sans-serif;color:#29364c;margin:0}
+.insight-forecast-charts>.section-heading p{font-size:12px;line-height:1.6;color:#7f8b9d;max-width:760px}
+.insight-forecast-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.projection-card{min-width:0;min-height:400px;padding:21px 23px;overflow:hidden}
+.projection-card .panel-heading h3{font:700 16px Manrope,sans-serif;letter-spacing:-.2px;color:#29364c;margin:0}
+.projection-card .panel-heading p{font-size:11px;color:#8995a7;margin:5px 0 0}
+.projection-delta{padding:7px 10px;border-radius:20px;background:#f1edff;color:#755bc3;font-size:12px;font-weight:700;white-space:nowrap}
+.projection-readings{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0 2px}
+.projection-readings>div{display:grid;gap:4px;padding:11px 13px;border:1px solid #edf0f5;border-radius:9px;background:#fbfcfe}
+.projection-readings>div:last-child{background:#f8f5ff;border-color:#ebe4ff}
+.projection-readings span{font-size:10px;color:#8792a4}
+.projection-readings strong{font:700 16px Manrope,sans-serif;color:#2c3950}
+.projection-svg{display:block;width:100%;height:255px;margin:11px 0 0;overflow:visible}
+.projection-svg text{font:14px "DM Sans",sans-serif;fill:#7e899b}
+.projection-svg .projection-value-label{font-size:17px;font-weight:700;fill:#344158;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
+.projection-disclaimer{margin:8px 2px 0;font-size:10px;line-height:1.5;color:#8d98a8}
+.projection-empty{min-height:245px;display:grid;place-items:center;padding:22px;text-align:center;color:#7f8b9c;font-size:13px;line-height:1.6}
+@media(max-width:700px){.insight-forecast-grid{grid-template-columns:1fr;gap:12px}.projection-card{min-height:365px;padding:16px}.projection-svg{height:230px}.projection-readings{gap:7px}.projection-readings>div{padding:9px}.projection-readings strong{font-size:14px}}

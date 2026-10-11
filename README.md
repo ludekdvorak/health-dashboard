@@ -2,35 +2,39 @@
 
 Lokální osobní dashboard pro Garmin Connect a ručně zadaná měření z Feelfit.
 
-## Spuštění
+## Místní spuštění
 
-Spusť aplikaci přes místní webový server. Při otevření `index.html` přímo jako `file://` prohlížeč blokuje načítání `health-data.json` a některé funkce úložiště:
+1. Nainstaluj Python 3.12 nebo novější.
+2. Pokud už máš připravený `.env`, není potřeba ho při každém spuštění upravovat. Soubor zůstává pouze lokálně a Git ho ignoruje.
+3. V Průzkumníku můžeš dvojkliknout na `install-and-run.bat`. V PowerShellu ve složce projektu spusť:
 
-```powershell
-py -m http.server 8000
-```
+   ```powershell
+   .\install-and-run.bat
+   ```
 
-Pak otevři <http://localhost:8000>. Server pouze zobrazí soubory aplikace a JSON; zdravotní data zůstávají v `health-data.json` a nepřenášejí se na žádnou službu.
+   To je doporučený jediný příkaz: BAT zkontroluje/nainstaluje potřebné Python balíčky a sám spustí `server.py`. Nespouštěj oba způsoby za sebou.
+4. Nech otevřené okno konzole a otevři <http://127.0.0.1:8765>. Server poběží, dokud okno nezavřeš nebo v něm nestiskneš `Ctrl+C`.
 
-V horní liště klikni na **Připojit datovou složku** a vyber složku, do které se má ukládat `health-data.json`. Aplikace z tohoto souboru načítá a po změně do něj automaticky zapisuje. Při prvním připojení převede dosavadní data z prohlížeče do souboru. Pro přístup z více počítačů vyber na každém zařízení stejnou složku synchronizovanou například přes OneDrive. Počkej na dokončení synchronizace a nepoužívej soubor současně na dvou zařízeních.
+Pokud už jsou závislosti nainstalované, můžeš místo BATu spustit přímo `py server.py`. Je to alternativní způsob spuštění téhož serveru, ne druhý krok.
 
-Přímý přístup ke složce funguje v desktopovém Chrome a Edge. Prohlížeč si pamatuje oprávnění ke složce; zdravotní záznamy jsou v `health-data.json`, v prohlížeči zůstává pouze reference na vybranou složku. Při použití OneDrive ulož datový soubor mimo Git repozitář.
+Server poslouží stránku a soubory aplikace a při synchronizaci uloží sloučená data do `health-data.json`. Když Garmin vyžádá MFA, zadej jednorázový kód do okna Python serveru. Heslo se v UI nezobrazuje. Pro první přihlášení lze ponechat `GARMIN_PASSWORD` prázdné; server si ho vyžádá skrytě v konzoli.
 
-## Import
+## Synchronizace Garmin Connect
 
-- Garmin `Activities.csv` nebo JSON `summarizedActivities`: datum, typ aktivity, vzdálenost, kalorie, čas, tep, tempo, převýšení, kroky a další souhrnné metriky běhu.
-- Garmin denní report `Skóre spánku 1 den` nebo JSON `sleepData`: skóre a kvalitu spánku, délku a fáze, stres, tep, Body Battery, SpO₂ a dýchání.
-- Garmin týdenní `Režim spánku.csv`: průměrné skóre, kvalitu, délku a období týdne.
-- Feelfit: ruční formulář podle názvů v aplikaci pro hmotnost, BMI, tělesný tuk, kosterní svaly, svalovou hmotu, protein, BMR, hmotnost bez tuku, podkožní a vnitřní tuk, vodu v těle, kostní hmotu a metabolický věk.
+Na stránce **Import dat** klikni na **Synchronizovat Garmin**. Aplikace načte posledních 30 dní denních statistik, spánku, tepových údajů, Body Battery a aktivit; data sloučí s dosavadním JSON souborem a v prohlížeči překreslí dashboard. Synchronizace se spouští ručně a běží pouze při zapnutém místním serveru.
 
-CSV můžeš vybrat po jednom nebo nahrát několik souborů současně. Opakovaný import stejného denního reportu nebo aktivity nevytvoří duplicitní záznam. Časové období a posuvnou časovou osu můžeš ovládat přímo na stránkách Přehled, Spánek, Aktivita i Tělesné hodnoty. Lze zvolit připravené období nebo vlastní rozsah.
+Připojení používá komunitní, neoficiální Python klient pro Garmin Connect, protože účet nemá přístup ke Garmin Health API. Ten klient se přihlašuje k webovým službám Garminu; Garmin může přihlašovací postup nebo rozhraní změnit a integrace pak může vyžadovat opravu. Oficiální Health API vyžaduje schválení v Garmin Connect Developer Program. Synchronizace proto není garantovanou ani Garminem podporovanou funkcí.
 
-Na stránce Import dat můžeš vybrat celou rozbalenou složku Garmin exportu. Import zpracuje odpovídající JSONy se souhrny aktivit, spánkem, denními kroky, kaloriemi, tepem, stresem, Body Battery, okysličením, hydratací a tréninkovými metrikami. Záznamy ze stejného dne se sloučí a aktivity se porovnají podle Garmin ID nebo data, času, vzdálenosti a délky. Opakovaný import tak nepřidává stejné hodnoty znovu. Ostatní soubory jako profil a nastavení se přeskočí; ZIP archivy se surovými FIT záznamy zatím aplikace nečte.
+`.env` obsahuje místní přihlašovací údaje a `.garminconnect/` uložené přihlašovací tokeny. Obě cesty jsou ignorované Gitem. Nesdílej je a nikdy je nevkládej do HTML nebo JavaScriptu. Server poslouchá pouze na `127.0.0.1`; nic se nehostuje veřejně. Údaje se posílají přes HTTPS službě Garmin při přihlášení. Zdravotní data se ukládají místně do `health-data.json` a prohlížeče.
 
-Stránky Spánek a Aktivita obsahují souhrnné statistiky a grafy pro zvolené období. Aktivitní grafy využijí i kadenci, délku kroku a aerobní tréninkový efekt, pokud jsou v Garmin JSON datech. Noční VST je z přehledu a grafů vynecháno. Na stránce Tělesné hodnoty jsou statistiky, trendový graf pro jednotlivé metriky a přehled posledního složení těla. Screenshot Feelfit můžeš načíst OCR; rozpoznané položky se předvyplní do formuláře a před uložením je můžeš zkontrolovat. Datum a hmotnost na screenshotu nemusí být, takže je v takovém případě doplň ručně. OCR používá Tesseract.js a při prvním použití stahuje knihovnu a rozpoznávací model; obrázek se zpracovává v prohlížeči.
+## Import exportu
 
-Záložka Výhled & signály srovnává nedávný klidový tep a spánek s vlastním předchozím průměrem a ukazuje trend VO₂ max. Číselná projekce VO₂ je pouze přímým pokračováním trendu, ne předpovědí zdravotního stavu. Aplikace neurčuje nemoc ani její příčinu. Pro klidový tep potřebuje alespoň 4 záznamy v posledním týdnu a 10 v předchozích čtyřech týdnech; pro projekci VO₂ alespoň 5 měření v průběhu tří týdnů.
+Dashboard dál podporuje ruční Garmin CSV/JSON exporty a Feelfit formulář/OCR. Importované Garmin reporty zahrnují spánek, fáze spánku, stres, tep, denní nabití/vybití Body Battery, SpO₂, dýchání a další metriky. Synchronizace navíc načte časový průběh úrovně Body Battery, pokud jej Garmin Connect pro daný den poskytne. Opakovaný import sloučí stejné dny a aktivity. CSV můžeš vybrat po jednom nebo nahrát celou rozbalenou složku Garmin exportu; ZIP archivy se surovými FIT záznamy se přeskočí.
 
-## Soukromí
+Stránky Přehled, Spánek a Aktivita obsahují souhrnné statistiky a grafy pro zvolené období. Časový rozsah lze nastavit v horní části dashboardu. Tělesné hodnoty můžeš zadat ručně nebo předvyplnit z obrázku Feelfit přes OCR; rozpoznané položky lze před uložením zkontrolovat.
 
-Importované soubory se čtou v prohlížeči. Zdravotní záznamy zůstávají v souboru, který sis vybral; aplikace je nikam sama neposílá. Zálohuj `health-data.json` nebo složku, ve které leží.
+Volitelné: `py -m http.server 8000` spustí pouze statickou stránku na <http://127.0.0.1:8000>, bez Garmin synchronizace. Pro běžné používání doporučuji `install-and-run.bat` a adresu na portu `8765`.
+
+## Zdravotní interpretace
+
+Grafy a hypotézy popisují trendy ve spotřebitelských datech, neurčují jejich příčinu ani zdravotní stav. Nejde o klinickou diagnózu.
