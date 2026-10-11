@@ -98,6 +98,83 @@
 /* Let overview trend cards use the page grid instead of nested half-width grids. */
 .overview-trend-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:14px}
 .overview-trend-grid>.panel{display:contents}
+
+.context-panels{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr);gap:15px;margin:0 0 20px;align-items:stretch}
+.context-panels>.panel{min-width:0;padding:19px 20px}
+.context-panels .panel-heading{margin-bottom:12px}
+.context-source,.news-source{font-size:10px;color:#8793a6;text-decoration:none}
+.context-source:hover,.news-source a:hover{color:#5279eb}
+.weather-current{display:flex;align-items:center;gap:13px;min-height:83px;padding:8px 13px;margin-bottom:12px;border-radius:11px;background:linear-gradient(110deg,#f0f5ff,#f8fbff);color:#53627b}
+.weather-icon{font-size:34px;line-height:1}
+.weather-now{display:grid;gap:3px;min-width:0}
+.weather-now strong{font:700 30px/1 Manrope,sans-serif;color:#28364b}
+.weather-now span{font-size:10px;color:#78869d}
+.weather-details{display:grid;gap:5px;margin-left:auto;text-align:right;font-size:10px;color:#718097;white-space:nowrap}
+.weather-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px}
+.weather-day{display:grid;justify-items:center;align-content:start;gap:4px;min-width:0;padding:10px 4px 9px;border:1px solid #edf0f5;border-radius:9px;background:#fff;text-align:center}
+.weather-day-name{font-size:10px;font-weight:700;color:#45546c;text-transform:capitalize}
+.weather-day-date{font-size:9px;color:#98a2b2}
+.weather-day-icon{font-size:21px;line-height:1.2;margin:3px 0}
+.weather-day strong{font:700 14px Manrope,sans-serif;color:#33415a}
+.weather-day-low{font-size:10px;color:#8a96a8}
+.weather-day small{font-size:9px;color:#6c9acb;white-space:nowrap}
+.hourly-weather{padding:12px 2px 5px;margin-bottom:14px;border-bottom:1px solid #edf0f5}
+.hourly-weather-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:0 2px 5px}
+.hourly-weather-heading>div{display:grid;gap:4px}
+.hourly-weather-heading strong{font-size:11px;color:#38465d}
+.hourly-weather-heading>div span{font-size:9px;color:#8d99aa}
+.rain-outlook{padding:6px 9px;border:1px solid #dce9fb;border-radius:7px;background:#f3f8ff;color:#4e78b5;font-size:9px;font-weight:600;line-height:1.4;text-align:right}
+.hourly-chart-wrap{width:100%;overflow-x:auto;overflow-y:hidden}
+.hourly-weather-chart{display:block;width:100%;min-width:560px;height:280px;overflow:visible}
+.hourly-grid{stroke:#e9eef5;stroke-width:1;stroke-dasharray:3 5}
+.hourly-rain-grid{stroke-dasharray:2 5}
+.hourly-axis-label{font:11px "DM Sans",sans-serif;fill:#8995a7}
+.hourly-time-label{font-size:12px;fill:#65748b}
+.hourly-rain-bar{fill:#9bcdf2;opacity:.78;transition:opacity .15s,fill .15s}
+.hourly-rain-bar.likely{fill:#559fe5;opacity:.9}
+.hourly-rain-bar:hover{fill:#4b9ee5;opacity:1}
+.hourly-temp-line{fill:none;stroke:#5279eb;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round}
+.hourly-temp-dot{fill:#fff;stroke:#5279eb;stroke-width:2.5}
+.hourly-legend{display:flex;align-items:center;gap:14px;margin:0 4px;color:#8793a5;font-size:9px}
+.hourly-legend>span{display:inline-flex;align-items:center;gap:5px}
+.hourly-legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.hourly-legend-temp{background:#5279eb}
+.hourly-legend-rain{background:#91c8f5}
+.hourly-legend small{margin-left:auto;font-size:8px;color:#a1aaba}
+.context-loading,.context-error{display:block;padding:15px 4px;color:#8995a7;font-size:11px;line-height:1.55}
+.context-error{color:#a2635c}
+.news-panel .text-button{white-space:nowrap}
+.news-panel .text-button:disabled{opacity:.6;cursor:wait}
+.news-filters{display:flex;gap:6px;margin:-2px 0 5px}
+.news-filter{padding:5px 10px;border:1px solid #e8edf4;border-radius:20px;background:#fff;color:#7f8b9e;font-size:9px;font-weight:600}
+.news-filter:hover{border-color:#cbd6f7;color:#5279eb}
+.news-filter.active{border-color:#dce5ff;background:#edf2ff;color:#4b70dc}
+.news-category{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.news-category-it{color:#5579df}
+.news-category-gaming{color:#9270cf}
+.news-list{display:grid}
+.news-item{display:flex;align-items:center;gap:12px;min-height:54px;padding:8px 2px;border-bottom:1px solid #edf0f5;color:inherit;text-decoration:none}
+.news-item:first-child{padding-top:2px}
+.news-item:last-child{border-bottom:0}
+.news-item-copy{display:grid;gap:5px;min-width:0}
+.news-item-copy strong{font-size:11px;line-height:1.4;color:#35435a;font-weight:600}
+.news-item:hover .news-item-copy strong{color:#5279eb}
+.news-item-copy small{font-size:9px;color:#9aa4b3}
+.news-arrow{margin-left:auto;color:#9aa7b9;font-size:14px}
+.news-source{margin-top:9px;padding-top:8px;border-top:1px solid #edf0f5}
+.news-source a{color:#7185b6;text-decoration:none}
+@media(max-width:1050px){.context-panels{grid-template-columns:1fr}.weather-week{gap:9px}}
+@media(max-width:560px){.context-panels>.panel{padding:15px 13px}.weather-current{gap:9px;padding:8px}.weather-icon{font-size:28px}.weather-now strong{font-size:26px}.weather-now span,.weather-details{font-size:9px}.weather-week{grid-template-columns:repeat(7,minmax(64px,1fr));overflow-x:auto;padding-bottom:3px}.weather-day{padding:9px 3px}.news-item{min-height:58px}.news-item-copy strong{font-size:10px}.hourly-weather-heading{flex-direction:column}.rain-outlook{text-align:left}.hourly-weather-chart{height:250px}.hourly-legend{flex-wrap:wrap;gap:8px}.hourly-legend small{flex-basis:100%;margin-left:0}}
+.page-wrap{max-width:2040px}
+.context-panels{grid-template-columns:minmax(0,1.4fr) minmax(320px,.8fr)}
+.hourly-weather-chart{height:320px}
+.hourly-temp-area{fill:#5279eb;opacity:.09}
+.hourly-temp-line{stroke-width:4}
+.hourly-temp-dot{r:4}
+.hourly-rain-bar{fill:#76b8eb;opacity:.9}
+.hourly-rain-bar.likely{fill:#358bd5;opacity:1}
+@media(max-width:1050px){.context-panels{grid-template-columns:1fr}}
+@media(max-width:560px){.hourly-weather-chart{height:250px}}
 .overview-trend-grid>.panel>.panel-heading{grid-column:1/-1;min-height:0;padding:5px 2px 0;margin:9px 0 -3px}
 .overview-trend-grid #overview-activity-chart.metric-trend-grid,
 .overview-trend-grid #overview-weight-chart.metric-trend-grid,

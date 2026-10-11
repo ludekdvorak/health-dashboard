@@ -6,6 +6,8 @@ import getpass
 import json
 import os
 import threading
+import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -216,6 +218,80 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def list_directory(self, path):
         self.send_error(403, "Výpis složek není povolen.")
         return None
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path == "/api/weather":
+            url = (
+                "https://api.open-meteo.com/v1/forecast?latitude=50.0755&longitude=14.4378"
+                "&timezone=Europe%2FPrague&forecast_days=7"
+                "&current=temperature_2m%2Capparent_temperature%2Crelative_humidity_2m%2Cwind_speed_10m%2Cweather_code"
+                "&hourly=temperature_2m%2Cprecipitation_probability%2Cprecipitation%2Cweather_code%2Cwind_speed_10m"
+                "&daily=weather_code%2Ctemperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_probability_max"
+            )
+            try:
+                request = urllib.request.Request(url, headers={"User-Agent": "MojeZdraviDashboard/1.0"})
+                with urllib.request.urlopen(request, timeout=8) as response:
+                    body = response.read(200_000)
+                status = 200
+            except Exception:
+                body = json.dumps({"error": "Počasí se teď nepodařilo načíst."}, ensure_ascii=False).encode("utf-8")
+                status = 502
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path != "/api/news":
+            return super().do_GET()
+        try:
+            items = []
+            feeds = [
+                ("https://www.root.cz/rss/clanky", "Root.cz", "it"),
+                ("https://www.root.cz/rss/zpravicky", "Root.cz", "it"),
+                ("https://zing.cz/rss/novinky", "Zing.cz", "gaming"),
+            ]
+            for feed_url, source, category in feeds:
+                try:
+                    request = urllib.request.Request(
+                        feed_url,
+                        headers={"User-Agent": "MojeZdraviDashboard/1.0 (personal RSS reader)"},
+                    )
+                    with urllib.request.urlopen(request, timeout=8) as response:
+                        root = ET.fromstring(response.read(1_500_000))
+                    entries = root.findall("./channel/item")
+                    for entry in entries[:10]:
+                        title = (entry.findtext("title") or "").strip()
+                        link = (entry.findtext("link") or "").strip()
+                        published = (entry.findtext("pubDate") or entry.findtext("date") or "").strip()
+                        if title and link.startswith("https://"):
+                            items.append({"title": title, "link": link, "published": published, "source": source, "category": category})
+                    if not entries:
+                        ns = "{http://www.w3.org/2005/Atom}"
+                        for entry in root.findall(f".//{ns}entry")[:10]:
+                            title = (entry.findtext(f"{ns}title") or "").strip()
+                            link_element = entry.find(f"{ns}link")
+                            link = (link_element.get("href", "") if link_element is not None else "").strip()
+                            published = (entry.findtext(f"{ns}published") or entry.findtext(f"{ns}updated") or "").strip()
+                            if title and link.startswith("https://"):
+                                items.append({"title": title, "link": link, "published": published, "source": source, "category": category})
+                except Exception:
+                    continue
+            if not items:
+                raise RuntimeError("RSS kanály nejsou dostupné.")
+            body = json.dumps({"items": items}, ensure_ascii=False).encode("utf-8")
+            status = 200
+        except Exception:
+            body = json.dumps({"error": "Zprávy se teď nepodařilo načíst."}, ensure_ascii=False).encode("utf-8")
+            status = 502
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         if urlparse(self.path).path != "/api/garmin/sync":

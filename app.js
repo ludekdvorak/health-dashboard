@@ -4,6 +4,7 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const readStore = (key) => { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } };
   let dataDirectoryHandle = null, fileStorageActive = false, fileSaveQueue = Promise.resolve(), appDataLoaded = false;
+  let latestNewsItems = [], newsFilter = 'all';
   function setStorageStatus(label, state = 'ready') {
     const button = $('#storage-folder-button'), status = $('#storage-status');
     const fileMode = location.protocol === 'file:';
@@ -266,6 +267,118 @@
     toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
   }
   function esc(value) { return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]); }
+  function weatherSummary(code) {
+    if (code === 0) return ['Jasno', '☀️'];
+    if ([1, 2].includes(code)) return ['Částečně oblačno', '🌤️'];
+    if (code === 3) return ['Zataženo', '☁️'];
+    if ([45, 48].includes(code)) return ['Mlha', '🌫️'];
+    if ([51, 53, 55, 56, 57].includes(code)) return ['Mrholení', '🌦️'];
+    if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return ['Déšť', '🌧️'];
+    if ([71, 73, 75, 77, 85, 86].includes(code)) return ['Sněžení', '🌨️'];
+    if ([95, 96, 99].includes(code)) return ['Bouřka', '⛈️'];
+    return ['Proměnlivo', '🌤️'];
+  }
+  function renderHourlyWeather(data) {
+    const host = $('#weather-hourly'), hourly = data.hourly, current = data.current;
+    const dayKey = String(current.time || '').slice(0, 10), currentHour = Number(String(current.time || '').slice(11, 13)) || 0;
+    const points = hourly.time.map((time, index) => ({
+      time, hour: Number(time.slice(11, 13)),
+      temperature: Number(hourly.temperature_2m[index]),
+      probability: Number(hourly.precipitation_probability[index]) || 0,
+      precipitation: Number(hourly.precipitation[index]) || 0,
+      wind: Number(hourly.wind_speed_10m[index]) || 0,
+      code: Number(hourly.weather_code[index]),
+    })).filter((item) => timeDate(item.time) === dayKey && item.hour >= currentHour);
+    if (!points.length) {
+      host.innerHTML = '<span class="context-loading">Hodinová předpověď pro dnešek není dostupná.</span>';
+      return;
+    }
+    const width = 900, height = 330, left = 54, right = 846;
+    const tempTop = 32, tempBottom = 145, rainTop = 183, rainBottom = 286;
+    const plotWidth = right - left, x = (index) => left + (points.length < 2 ? plotWidth / 2 : plotWidth * index / (points.length - 1));
+    const temps = points.map((point) => point.temperature).filter(Number.isFinite);
+    const tempMin = Math.floor(Math.min(...temps) - 2), tempMax = Math.ceil(Math.max(...temps) + 2);
+    const yTemp = (value) => tempBottom - (value - tempMin) / Math.max(1, tempMax - tempMin) * (tempBottom - tempTop);
+    const tempTicks = [tempMin, Math.round((tempMin + tempMax) / 2), tempMax];
+    const grid = tempTicks.map((value) => `<line class="hourly-grid" x1="${left}" x2="${right}" y1="${yTemp(value)}" y2="${yTemp(value)}"/><text class="hourly-axis-label" x="${left - 11}" y="${yTemp(value) + 4}" text-anchor="end">${value}°</text>`).join('');
+    const rainGrid = [0, 25, 50, 75, 100].map((value) => {
+      const y = rainBottom - (rainBottom - rainTop) * value / 100;
+      return `<line class="hourly-grid hourly-rain-grid" x1="${left}" x2="${right}" y1="${y}" y2="${y}"/><text class="hourly-axis-label" x="${right + 10}" y="${y + 4}">${value}%</text>`;
+    }).join('');
+    const labels = points.map((point, index) => index === 0 || index === points.length - 1 || point.hour % 3 === 0
+      ? `<text class="hourly-axis-label hourly-time-label" x="${x(index)}" y="319" text-anchor="middle">${String(point.hour).padStart(2, '0')}:00</text>` : '').join('');
+    const barWidth = Math.min(24, Math.max(9, plotWidth / points.length * .58));
+    const bars = points.map((point, index) => {
+      const barHeight = Math.max(point.probability > 0 ? 5 : 0, (rainBottom - rainTop) * point.probability / 100);
+      const y = rainBottom - barHeight;
+      const [description] = weatherSummary(point.code);
+      return `<g><title>${String(point.hour).padStart(2, '0')}:00 · ${Math.round(point.temperature)} °C · ${description} · pravděpodobnost srážek ${Math.round(point.probability)} % · úhrn ${point.precipitation.toLocaleString('cs-CZ', { maximumFractionDigits: 1 })} mm · vítr ${Math.round(point.wind)} km/h</title><rect class="hourly-rain-bar${point.probability >= 50 ? ' likely' : ''}" x="${x(index) - barWidth / 2}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4"/></g>`;
+    }).join('');
+    const line = points.map((point, index) => `${index ? 'L' : 'M'} ${x(index)} ${yTemp(point.temperature)}`).join(' ');
+    const area = `${line} L ${x(points.length - 1)} ${tempBottom} L ${x(0)} ${tempBottom} Z`;
+    const dots = points.map((point, index) => `<circle class="hourly-temp-dot" cx="${x(index)}" cy="${yTemp(point.temperature)}" r="4"><title>${String(point.hour).padStart(2, '0')}:00 · ${Math.round(point.temperature)} °C</title></circle>`).join('');
+    const wetHours = points.filter((point) => point.precipitation >= 0.1 || point.probability >= 30);
+    const peakRain = (wetHours.length ? wetHours : points).reduce((best, point) => point.probability > best.probability ? point : best);
+    const rainText = peakRain.probability >= 30
+      ? `${peakRain.probability >= 60 ? 'Největší šance na déšť' : 'Srážky možné'} kolem ${String(peakRain.hour).padStart(2, '0')}:00 · ${Math.round(peakRain.probability)} %`
+      : 'Déšť se dnes podle předpovědi neočekává';
+    host.innerHTML = `<div class="hourly-weather-heading"><div><strong>Dnešní počasí po hodinách</strong><span>Teplota a šance na srážky · výhled od aktuální hodiny</span></div><span class="rain-outlook">${esc(rainText)}</span></div><div class="hourly-chart-wrap"><svg class="hourly-weather-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Dnešní hodinová předpověď teploty a pravděpodobnosti srážek"><path class="hourly-temp-area" d="${area}"/>${grid}${rainGrid}${bars}<path class="hourly-temp-line" d="${line}"/>${dots}${labels}</svg></div><div class="hourly-legend"><span><i class="hourly-legend-temp"></i>Teplota (levá osa)</span><span><i class="hourly-legend-rain"></i>Šance na srážky (pravá osa)</span><small>Detail hodiny zobrazíš najetím na graf</small></div>`;
+  }
+  function timeDate(value) { return String(value || '').slice(0, 10); }
+  async function loadWeather() {
+    const currentEl = $('#weather-current'), weekEl = $('#weather-week'), hourlyEl = $('#weather-hourly');
+    try {
+      const response = await fetch('/api/weather', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Počasí se teď nepodařilo načíst.');
+      const data = await response.json();
+      const current = data.current, daily = data.daily;
+      const [description, icon] = weatherSummary(current.weather_code);
+      currentEl.innerHTML = `<div class="weather-icon" aria-hidden="true">${icon}</div><div class="weather-now"><strong>${Math.round(current.temperature_2m)}°</strong><span>${esc(description)} · pocitově ${Math.round(current.apparent_temperature)}°</span></div><div class="weather-details"><span>Vítr ${Math.round(current.wind_speed_10m)} km/h</span><span>Vlhkost ${Math.round(current.relative_humidity_2m)} %</span></div>`;
+      renderHourlyWeather(data);
+      weekEl.innerHTML = daily.time.map((date, index) => {
+        const day = new Date(`${date}T12:00:00`);
+        const label = index === 0 ? 'Dnes' : new Intl.DateTimeFormat('cs-CZ', { weekday: 'short' }).format(day);
+        const [, dayIcon] = weatherSummary(daily.weather_code[index]);
+        const rain = daily.precipitation_probability_max[index];
+        return `<div class="weather-day"><span class="weather-day-name">${esc(label)}</span><span class="weather-day-date">${day.getDate()}. ${day.getMonth() + 1}.</span><span class="weather-day-icon" aria-hidden="true">${dayIcon}</span><strong>${Math.round(daily.temperature_2m_max[index])}°</strong><span class="weather-day-low">${Math.round(daily.temperature_2m_min[index])}°</span><small>${rain == null ? '—' : `${Math.round(rain)} %`} <span aria-label="srážky">💧</span></small></div>`;
+      }).join('');
+      $('#weather-updated').textContent = `Aktualizováno ${new Intl.DateTimeFormat('cs-CZ', { hour: '2-digit', minute: '2-digit' }).format(new Date())} · předpověď na 7 dní`;
+    } catch (error) {
+      currentEl.innerHTML = '<span class="context-error">Počasí se nepodařilo načíst. Zkontroluj připojení k internetu.</span>';
+      weekEl.replaceChildren();
+      hourlyEl.innerHTML = '<span class="context-error">Hodinová předpověď není dostupná.</span>';
+    }
+  }
+  async function loadNews() {
+    const host = $('#news-list'), button = $('#news-refresh');
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch(`/api/news?refresh=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Zprávy se teď nepodařilo načíst.');
+      const data = await response.json();
+      if (!Array.isArray(data.items) || !data.items.length) throw new Error('Ve feedu teď nejsou žádné zprávy.');
+      latestNewsItems = data.items.sort((a, b) => (Date.parse(b.published) || 0) - (Date.parse(a.published) || 0));
+      renderNewsItems();
+    } catch (error) {
+      host.innerHTML = `<span class="context-error">${esc(error.message || 'Zprávy se nepodařilo načíst.')} Spusť aplikaci přes BAT a zkus Obnovit.</span>`;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+  function renderNewsItems() {
+    const host = $('#news-list');
+    const visible = latestNewsItems.filter((item) => newsFilter === 'all' || item.category === newsFilter).slice(0, 12);
+    if (!visible.length) {
+      host.innerHTML = '<span class="context-loading">Pro tento filtr teď nejsou žádné titulky.</span>';
+      return;
+    }
+    host.innerHTML = visible.map((item) => {
+        const parsed = Date.parse(item.published);
+        const time = Number.isNaN(parsed) ? '' : new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(parsed));
+        const category = item.category === 'gaming' ? 'Hry' : 'IT';
+        return `<a class="news-item" href="${esc(item.link)}" target="_blank" rel="noopener noreferrer"><span class="news-item-copy"><strong>${esc(item.title)}</strong><small><span class="news-category news-category-${esc(item.category)}">${category}</span> · ${esc(item.source)} · ${esc(time || '')}</small></span><span class="news-arrow" aria-hidden="true">↗</span></a>`;
+      }).join('');
+  }
   function normalize(value) { return String(value ?? '').trim().toLocaleLowerCase('cs-CZ').replace(/^['"]|['"]$/g, '').replace(/₂/g, '2').replace(/₃/g, '3').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' '); }
   function numberValue(value) {
     const found = String(value ?? '').replace(',', '.').match(/[-+]?\d+(?:\.\d+)?/);
@@ -974,9 +1087,11 @@
   function mountSharedPeriodControls() {
     const overview = $('#page-overview');
     const range = overview.querySelector('.range-bar'), timeline = overview.querySelector('.timeline-panel');
+    const context = overview.querySelector('.context-panels');
     const heading = overview.querySelector('.page-heading');
     heading.after(range);
-    range.after(timeline);
+    range.after(context);
+    context.after(timeline);
     $('#page-sleep .range-bar')?.remove();
     document.body.dataset.page = 'overview';
   }
@@ -1550,6 +1665,16 @@
     }
   });
   $('#top-import').addEventListener('click', () => navigate('import'));
+  $('#news-refresh').addEventListener('click', loadNews);
+  $$('.news-filter').forEach((button) => button.addEventListener('click', () => {
+    newsFilter = button.dataset.newsFilter;
+    $$('.news-filter').forEach((item) => {
+      const active = item === button;
+      item.classList.toggle('active', active);
+      item.setAttribute('aria-pressed', String(active));
+    });
+    renderNewsItems();
+  }));
   $('#range-select').addEventListener('change', () => {
     $('#custom-range').classList.toggle('hidden', $('#range-select').value !== 'custom');
     saveSelectedRange();
@@ -1651,6 +1776,7 @@
   if (normalizeStoredActivities()) writeStore(STORE.activity, activityRecords);
   if (normalizeStoredSleepDurations()) writeStore(STORE.sleep, sleepRecords);
   renderImports(); renderWeights(); updateDashboard();
+  loadWeather(); loadNews();
   initializeDataDirectory().then(hydrateFromAppDataFile);
   const initialPage = location.hash.slice(1);
   if (initialPage && $(`#page-${initialPage}`)) navigate(initialPage);
